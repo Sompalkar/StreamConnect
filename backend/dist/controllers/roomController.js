@@ -15,16 +15,81 @@ const roomService_1 = require("../services/roomService");
 const mediasoupService_1 = require("../services/mediasoupService");
 const hlsService_1 = require("../services/hlsService");
 exports.roomController = {
+    // Create a new room
+    createRoom: () => __awaiter(void 0, void 0, void 0, function* () {
+        try {
+            const router = yield mediasoupService_1.mediasoupService.createRouter();
+            const room = roomService_1.roomService.createRoom(router);
+            return {
+                success: true,
+                room: {
+                    id: room.id,
+                    roomCode: room.roomCode,
+                    watchCode: room.watchCode,
+                },
+            };
+        }
+        catch (error) {
+            console.error(`Error creating room: ${error}`);
+            return { success: false, error: `Failed to create room: ${error}` };
+        }
+    }),
+    // Join room by room code
+    joinRoomByCode: (socket, roomCode) => __awaiter(void 0, void 0, void 0, function* () {
+        try {
+            console.log(`Client ${socket.id} joining room with code ${roomCode}`);
+            // Find room by code
+            const room = roomService_1.roomService.getRoomByCode(roomCode);
+            if (!room) {
+                return { success: false, error: "Room not found" };
+            }
+            // Create peer and add to room
+            const peer = new Peer_1.Peer(socket.id, socket);
+            room.addPeer(peer);
+            // Join socket.io room
+            socket.join(room.id);
+            // Notify other peers in the room
+            socket.to(room.id).emit("user-connected", socket.id);
+            // Get existing peers in the room
+            const existingPeers = room
+                .getPeers()
+                .filter((p) => p.id !== socket.id)
+                .map((p) => p.id);
+            existingPeers.forEach((peerId) => {
+                socket.emit("user-connected", peerId);
+            });
+            // Start HLS transcoding if we have enough peers
+            if (room.peers.size >= 2) {
+                hlsService_1.hlsService.startTranscoding(room);
+            }
+            console.log(`Client ${socket.id} joined room ${room.roomCode}`);
+            return {
+                success: true,
+                room: {
+                    id: room.id,
+                    roomCode: room.roomCode,
+                    watchCode: room.watchCode,
+                },
+                peers: existingPeers,
+            };
+        }
+        catch (error) {
+            console.error(`Error joining room: ${error}`);
+            return { success: false, error: `Failed to join room: ${error}` };
+        }
+    }),
+    // Join room by ID (for existing rooms)
     joinRoom: (socket, roomId) => __awaiter(void 0, void 0, void 0, function* () {
         try {
             console.log(`Client ${socket.id} joining room ${roomId}`);
-            // Get or create room
+            // Get room
             let room = roomService_1.roomService.getRoom(roomId);
             if (!room) {
+                // Create room if it doesn't exist (for backward compatibility)
                 const router = yield mediasoupService_1.mediasoupService.createRouter();
-                room = roomService_1.roomService.createRoom(roomId, router);
+                room = roomService_1.roomService.createRoom(router);
             }
-            // Create peer
+            // Create peer and add to room
             const peer = new Peer_1.Peer(socket.id, socket);
             room.addPeer(peer);
             // Join socket.io room
@@ -39,7 +104,7 @@ exports.roomController = {
             existingPeers.forEach((peerId) => {
                 socket.emit("user-connected", peerId);
             });
-            // Update HLS transcoding if needed
+            // Start HLS transcoding if we have enough peers
             if (room.peers.size >= 2) {
                 hlsService_1.hlsService.startTranscoding(room);
             }
@@ -51,6 +116,7 @@ exports.roomController = {
             return { success: false, error: `Failed to join room: ${error}` };
         }
     }),
+    // Leave room
     leaveRoom: (socket, roomId) => {
         try {
             console.log(`Client ${socket.id} leaving room ${roomId}`);
@@ -73,7 +139,7 @@ exports.roomController = {
             if (room.isEmpty()) {
                 roomService_1.roomService.removeRoom(roomId);
                 hlsService_1.hlsService.stopTranscoding(roomId);
-                console.log(`Room ${roomId} deleted (empty)`);
+                console.log(`Room ${room.roomCode} deleted (empty)`);
             }
             else if (room.peers.size < 2) {
                 // Stop HLS transcoding if fewer than 2 peers
@@ -87,8 +153,9 @@ exports.roomController = {
             return { success: false, error: `Failed to leave room: ${error}` };
         }
     },
-    getRoomInfo: (roomId) => {
-        const room = roomService_1.roomService.getRoom(roomId);
+    // Get room info by room code
+    getRoomByCode: (roomCode) => {
+        const room = roomService_1.roomService.getRoomByCode(roomCode);
         if (!room)
             return { success: false, error: "Room not found" };
         return {
@@ -96,6 +163,18 @@ exports.roomController = {
             room: room.toJSON(),
         };
     },
+    // Get room info by watch code
+    getRoomByWatchCode: (watchCode) => {
+        const room = roomService_1.roomService.getRoomByWatchCode(watchCode);
+        if (!room)
+            return { success: false, error: "Stream not found" };
+        return {
+            success: true,
+            room: room.toJSON(),
+            hlsUrl: hlsService_1.hlsService.getHlsUrl(room.id),
+        };
+    },
+    // Handle chat messages
     handleChatMessage: (socket, roomId, message) => {
         try {
             const room = roomService_1.roomService.getRoom(roomId);
@@ -112,5 +191,12 @@ exports.roomController = {
             console.error(`Error handling chat message: ${error}`);
             return { success: false, error: `Failed to handle chat message: ${error}` };
         }
+    },
+    // Get all rooms (for admin/debugging)
+    getAllRooms: () => {
+        return {
+            success: true,
+            stats: roomService_1.roomService.getRoomStats(),
+        };
     },
 };

@@ -21,22 +21,25 @@ const routes_1 = __importDefault(require("./routes"));
 const roomController_1 = require("./controllers/roomController");
 const mediasoupService_1 = require("./services/mediasoupService");
 const hlsService_1 = require("./services/hlsService");
+const roomService_1 = require("./services/roomService");
 // Initialize Express app
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
+// Serve HLS files statically
 app.use("/hls", express_1.default.static(path_1.default.join(__dirname, "../public/hls")));
+// API routes
 app.use("/api", routes_1.default);
 // Create HTTP server
 const server = http_1.default.createServer(app);
-// Initialize Socket.IO
+// Initialize Socket.IO with CORS
 const io = new socket_io_1.Server(server, {
     cors: {
         origin: "*",
         methods: ["GET", "POST"],
     },
 });
-// Initialize mediasoup
+// Initialize mediasoup service
 mediasoupService_1.mediasoupService.initialize().catch((error) => {
     console.error("Failed to initialize mediasoup:", error);
     process.exit(1);
@@ -45,12 +48,26 @@ mediasoupService_1.mediasoupService.initialize().catch((error) => {
 io.on("connection", (socket) => __awaiter(void 0, void 0, void 0, function* () {
     console.log(`Client connected: ${socket.id}`);
     let currentRoomId = null;
-    // Handle room joining
+    // Handle room joining by room ID (backward compatibility)
     socket.on("join-room", (roomId) => __awaiter(void 0, void 0, void 0, function* () {
         currentRoomId = roomId;
-        yield roomController_1.roomController.joinRoom(socket, roomId);
+        const result = yield roomController_1.roomController.joinRoom(socket, roomId);
+        if (!result.success) {
+            socket.emit("error", { message: result.error });
+        }
     }));
-    // Handle WebRTC signaling
+    // Handle room joining by room code
+    socket.on("join-room-by-code", (roomCode) => __awaiter(void 0, void 0, void 0, function* () {
+        const result = yield roomController_1.roomController.joinRoomByCode(socket, roomCode);
+        if (result.success && result.room) {
+            currentRoomId = result.room.id;
+            socket.emit("room-joined", result);
+        }
+        else {
+            socket.emit("error", { message: result.error });
+        }
+    }));
+    // Handle WebRTC signaling - forward offers between peers
     socket.on("offer", (data) => __awaiter(void 0, void 0, void 0, function* () {
         const { to, offer } = data;
         console.log(`Forwarding offer from ${socket.id} to ${to}`);
@@ -59,6 +76,7 @@ io.on("connection", (socket) => __awaiter(void 0, void 0, void 0, function* () {
             offer,
         });
     }));
+    // Handle WebRTC signaling - forward answers between peers
     socket.on("answer", (data) => __awaiter(void 0, void 0, void 0, function* () {
         const { to, answer } = data;
         console.log(`Forwarding answer from ${socket.id} to ${to}`);
@@ -67,6 +85,7 @@ io.on("connection", (socket) => __awaiter(void 0, void 0, void 0, function* () {
             answer,
         });
     }));
+    // Handle WebRTC signaling - forward ICE candidates between peers
     socket.on("ice-candidate", (data) => __awaiter(void 0, void 0, void 0, function* () {
         const { to, candidate } = data;
         console.log(`Forwarding ICE candidate from ${socket.id} to ${to}`);
@@ -90,15 +109,27 @@ io.on("connection", (socket) => __awaiter(void 0, void 0, void 0, function* () {
         }
     });
 }));
+// Periodic cleanup of empty rooms (every 5 minutes)
+setInterval(() => {
+    roomService_1.roomService.cleanupEmptyRooms();
+}, 5 * 60 * 1000);
 // Graceful shutdown
 process.on("SIGINT", () => __awaiter(void 0, void 0, void 0, function* () {
-    console.log("Shutting down...");
+    console.log("Shutting down gracefully...");
+    // Cleanup services
     hlsService_1.hlsService.cleanup();
     yield mediasoupService_1.mediasoupService.close();
-    process.exit(0);
+    // Close server
+    server.close(() => {
+        console.log("Server closed");
+        process.exit(0);
+    });
 }));
 // Start server
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📡 WebRTC signaling ready`);
+    console.log(`📺 HLS streaming available at /hls`);
+    console.log(`🔗 API available at /api`);
 });

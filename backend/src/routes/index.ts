@@ -3,10 +3,21 @@ import { roomController } from "../controllers/roomController"
 
 const router = express.Router()
 
-// API routes
-router.get("/rooms/:roomId", (req, res) => {
-  const { roomId } = req.params
-  const result = roomController.getRoomInfo(roomId)
+// Create a new room
+router.post("/rooms", async (req, res) => {
+  const result = await roomController.createRoom()
+
+  if (result.success) {
+    res.json(result)
+  } else {
+    res.status(500).json(result)
+  }
+})
+
+// Get room info by room code
+router.get("/rooms/code/:roomCode", (req, res) => {
+  const { roomCode } = req.params
+  const result = roomController.getRoomByCode(roomCode)
 
   if (result.success) {
     res.json(result)
@@ -15,8 +26,31 @@ router.get("/rooms/:roomId", (req, res) => {
   }
 })
 
+// Get room info by watch code
+router.get("/rooms/watch/:watchCode", (req, res) => {
+  const { watchCode } = req.params
+  const result = roomController.getRoomByWatchCode(watchCode)
+
+  if (result.success) {
+    res.json(result)
+  } else {
+    res.status(404).json(result)
+  }
+})
+
+// Get all rooms (admin endpoint)
+router.get("/rooms", (req, res) => {
+  const result = roomController.getAllRooms()
+  res.json(result)
+})
+
+// Health check
 router.get("/health", (req, res) => {
-  res.json({ status: "ok" })
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  })
 })
 
 export default router

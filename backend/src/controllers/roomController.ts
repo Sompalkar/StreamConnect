@@ -5,18 +5,92 @@ import { mediasoupService } from "../services/mediasoupService"
 import { hlsService } from "../services/hlsService"
 
 export const roomController = {
+  // Create a new room
+  createRoom: async () => {
+    try {
+      const router = await mediasoupService.createRouter()
+      const room = roomService.createRoom(router)
+
+      return {
+        success: true,
+        room: {
+          id: room.id,
+          roomCode: room.roomCode,
+          watchCode: room.watchCode,
+        },
+      }
+    } catch (error) {
+      console.error(`Error creating room: ${error}`)
+      return { success: false, error: `Failed to create room: ${error}` }
+    }
+  },
+
+  // Join room by room code
+  joinRoomByCode: async (socket: Socket, roomCode: string) => {
+    try {
+      console.log(`Client ${socket.id} joining room with code ${roomCode}`)
+
+      // Find room by code
+      const room = roomService.getRoomByCode(roomCode)
+      if (!room) {
+        return { success: false, error: "Room not found" }
+      }
+
+      // Create peer and add to room
+      const peer = new Peer(socket.id, socket)
+      room.addPeer(peer)
+
+      // Join socket.io room
+      socket.join(room.id)
+
+      // Notify other peers in the room
+      socket.to(room.id).emit("user-connected", socket.id)
+
+      // Get existing peers in the room
+      const existingPeers = room
+        .getPeers()
+        .filter((p) => p.id !== socket.id)
+        .map((p) => p.id)
+
+      existingPeers.forEach((peerId) => {
+        socket.emit("user-connected", peerId)
+      })
+
+      // Start HLS transcoding if we have enough peers
+      if (room.peers.size >= 2) {
+        hlsService.startTranscoding(room)
+      }
+
+      console.log(`Client ${socket.id} joined room ${room.roomCode}`)
+      return {
+        success: true,
+        room: {
+          id: room.id,
+          roomCode: room.roomCode,
+          watchCode: room.watchCode,
+        },
+        peers: existingPeers,
+      }
+    } catch (error) {
+      console.error(`Error joining room: ${error}`)
+      return { success: false, error: `Failed to join room: ${error}` }
+    }
+  },
+
+  // Join room by ID (for existing rooms)
   joinRoom: async (socket: Socket, roomId: string) => {
     try {
       console.log(`Client ${socket.id} joining room ${roomId}`)
 
-      // Get or create room
+      // Get room
       let room = roomService.getRoom(roomId)
       if (!room) {
+        // Create room if it doesn't exist (for backward compatibility)
         const router = await mediasoupService.createRouter()
-        room = roomService.createRoom(roomId, router)
+        room = roomService.createRoom(router)
       }
 
-      // Create peer
+      // Create peer and add to room
       const peer = new Peer(socket.id, socket)
       room.addPeer(peer)
 
@@ -36,7 +110,7 @@ export const roomController = {
         socket.emit("user-connected", peerId)
       })
 
-      // Update HLS transcoding if needed
+      // Start HLS transcoding if we have enough peers
       if (room.peers.size >= 2) {
         hlsService.startTranscoding(room)
       }
@@ -49,6 +123,7 @@ export const roomController = {
     }
   },
 
+  // Leave room
   leaveRoom: (socket: Socket, roomId: string) => {
     try {
       console.log(`Client ${socket.id} leaving room ${roomId}`)
@@ -76,7 +151,7 @@ export const roomController = {
       if (room.isEmpty()) {
         roomService.removeRoom(roomId)
         hlsService.stopTranscoding(roomId)
-        console.log(`Room ${roomId} deleted (empty)`)
+        console.log(`Room ${room.roomCode} deleted (empty)`)
       } else if (room.peers.size < 2) {
         // Stop HLS transcoding if fewer than 2 peers
         hlsService.stopTranscoding(roomId)
@@ -90,8 +165,9 @@ export const roomController = {
     }
   },
 
-  getRoomInfo: (roomId: string) => {
-    const room = roomService.getRoom(roomId)
+  // Get room info by room code
+  getRoomByCode: (roomCode: string) => {
+    const room = roomService.getRoomByCode(roomCode)
     if (!room) return { success: false, error: "Room not found" }
 
     return {
@@ -100,6 +176,19 @@ export const roomController = {
     }
   },
 
+  // Get room info by watch code
+  getRoomByWatchCode: (watchCode: string) => {
+    const room = roomService.getRoomByWatchCode(watchCode)
+    if (!room) return { success: false, error: "Stream not found" }
+
+    return {
+      success: true,
+      room: room.toJSON(),
+      hlsUrl: hlsService.getHlsUrl(room.id),
+    }
+  },
+
+  // Handle chat messages
   handleChatMessage: (socket: Socket, roomId: string, message: string) => {
     try {
       const room = roomService.getRoom(roomId)
@@ -115,6 +204,14 @@ export const roomController = {
     } catch (error) {
       console.error(`Error handling chat message: ${error}`)
       return { success: false, error: `Failed to handle chat message: ${error}` }
+    }
+  },
+
+  // Get all rooms (for admin/debugging)
+  getAllRooms: () => {
+    return {
+      success: true,
+      stats: roomService.getRoomStats(),
     }
   },
 }

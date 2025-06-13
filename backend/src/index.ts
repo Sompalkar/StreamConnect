@@ -7,18 +7,23 @@ import routes from "./routes"
 import { roomController } from "./controllers/roomController"
 import { mediasoupService } from "./services/mediasoupService"
 import { hlsService } from "./services/hlsService"
+import { roomService } from "./services/roomService"
 
 // Initialize Express app
 const app = express()
 app.use(cors())
 app.use(express.json())
+
+// Serve HLS files statically
 app.use("/hls", express.static(path.join(__dirname, "../public/hls")))
+
+// API routes
 app.use("/api", routes)
 
 // Create HTTP server
 const server = http.createServer(app)
 
-// Initialize Socket.IO
+// Initialize Socket.IO with CORS
 const io = new Server(server, {
   cors: {
     origin: "*",
@@ -26,7 +31,7 @@ const io = new Server(server, {
   },
 })
 
-// Initialize mediasoup
+// Initialize mediasoup service
 mediasoupService.initialize().catch((error) => {
   console.error("Failed to initialize mediasoup:", error)
   process.exit(1)
@@ -38,13 +43,29 @@ io.on("connection", async (socket) => {
 
   let currentRoomId: string | null = null
 
-  // Handle room joining
+  // Handle room joining by room ID (backward compatibility)
   socket.on("join-room", async (roomId: string) => {
     currentRoomId = roomId
-    await roomController.joinRoom(socket, roomId)
+    const result = await roomController.joinRoom(socket, roomId)
+
+    if (!result.success) {
+      socket.emit("error", { message: result.error })
+    }
   })
 
-  // Handle WebRTC signaling
+  // Handle room joining by room code
+  socket.on("join-room-by-code", async (roomCode: string) => {
+    const result = await roomController.joinRoomByCode(socket, roomCode)
+
+    if (result.success && result.room) {
+      currentRoomId = result.room.id
+      socket.emit("room-joined", result)
+    } else {
+      socket.emit("error", { message: result.error })
+    }
+  })
+
+  // Handle WebRTC signaling - forward offers between peers
   socket.on("offer", async (data) => {
     const { to, offer } = data
     console.log(`Forwarding offer from ${socket.id} to ${to}`)
@@ -54,6 +75,7 @@ io.on("connection", async (socket) => {
     })
   })
 
+  // Handle WebRTC signaling - forward answers between peers
   socket.on("answer", async (data) => {
     const { to, answer } = data
     console.log(`Forwarding answer from ${socket.id} to ${to}`)
@@ -63,6 +85,7 @@ io.on("connection", async (socket) => {
     })
   })
 
+  // Handle WebRTC signaling - forward ICE candidates between peers
   socket.on("ice-candidate", async (data) => {
     const { to, candidate } = data
     console.log(`Forwarding ICE candidate from ${socket.id} to ${to}`)
@@ -89,16 +112,34 @@ io.on("connection", async (socket) => {
   })
 })
 
+// Periodic cleanup of empty rooms (every 5 minutes)
+setInterval(
+  () => {
+    roomService.cleanupEmptyRooms()
+  },
+  5 * 60 * 1000,
+)
+
 // Graceful shutdown
 process.on("SIGINT", async () => {
-  console.log("Shutting down...")
+  console.log("Shutting down gracefully...")
+
+  // Cleanup services
   hlsService.cleanup()
   await mediasoupService.close()
-  process.exit(0)
+
+  // Close server
+  server.close(() => {
+    console.log("Server closed")
+    process.exit(0)
+  })
 })
 
 // Start server
 const PORT = process.env.PORT || 3001
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`)
+  console.log(`🚀 Server running on port ${PORT}`)
+  console.log(`📡 WebRTC signaling ready`)
+  console.log(`📺 HLS streaming available at /hls`)
+  console.log(`🔗 API available at /api`)
 })
