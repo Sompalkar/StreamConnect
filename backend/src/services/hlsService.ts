@@ -1,7 +1,12 @@
 import { spawn, type ChildProcess } from "child_process"
 import fs from "fs"
 import path from "path"
+import { fileURLToPath } from "url"
 import type { Room } from "../models/Room"
+
+// Fix for ES modules
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 class HlsService {
   private ffmpegProcesses: Map<string, ChildProcess>

@@ -5,7 +5,19 @@ const router = express.Router()
 
 // Create a new room
 router.post("/rooms", async (req, res) => {
-  const result = await roomController.createRoom()
+  const { creatorId } = req.body
+  const result = await roomController.createRoom(creatorId || "anonymous")
+
+  if (result.success) {
+    res.json(result)
+  } else {
+    res.status(500).json(result)
+  }
+})
+
+// Get live rooms for watch page
+router.get("/rooms/live", (req, res) => {
+  const result = roomController.getLiveRooms()
 
   if (result.success) {
     res.json(result)

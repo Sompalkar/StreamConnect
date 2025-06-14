@@ -3,11 +3,16 @@ import http from "http"
 import { Server } from "socket.io"
 import cors from "cors"
 import path from "path"
-import routes from "./routes"
-import { roomController } from "./controllers/roomController"
-import { mediasoupService } from "./services/mediasoupService"
-import { hlsService } from "./services/hlsService"
-import { roomService } from "./services/roomService"
+import { fileURLToPath } from "url"
+import routes from "./routes/index.js"
+import { roomController } from "./controllers/roomController.js"
+import { mediasoupService } from "./services/mediasoupService.js"
+import { hlsService } from "./services/hlsService.js"
+import { roomService } from "./services/roomService.js"
+
+// Fix for ES modules
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 // Initialize Express app
 const app = express()
@@ -60,6 +65,28 @@ io.on("connection", async (socket) => {
     if (result.success && result.room) {
       currentRoomId = result.room.id
       socket.emit("room-joined", result)
+    } else {
+      socket.emit("error", { message: result.error })
+    }
+  })
+
+  // Handle going live
+  socket.on("go-live", async (data: { roomId: string; title?: string; description?: string }) => {
+    const result = roomController.goLive(socket, data.roomId, data.title, data.description)
+
+    if (result.success) {
+      socket.emit("live-status-changed", { isLive: true })
+    } else {
+      socket.emit("error", { message: result.error })
+    }
+  })
+
+  // Handle ending live
+  socket.on("end-live", async (data: { roomId: string }) => {
+    const result = roomController.endLive(socket, data.roomId)
+
+    if (result.success) {
+      socket.emit("live-status-changed", { isLive: false })
     } else {
       socket.emit("error", { message: result.error })
     }

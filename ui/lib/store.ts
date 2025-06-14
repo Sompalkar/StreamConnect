@@ -2,7 +2,6 @@
 
 import { create } from "zustand"
 import { io, type Socket } from "socket.io-client"
-import { RTCSessionDescription, RTCIceCandidate } from "webrtc"
 
 export interface ChatMessage {
   text: string
@@ -15,6 +14,10 @@ export interface Room {
   id: string
   roomCode: string
   watchCode: string
+  title?: string
+  description?: string
+  isLive?: boolean
+  createdAt: Date
 }
 
 interface StreamState {
@@ -28,6 +31,8 @@ interface StreamState {
   chatMessages: ChatMessage[]
   dataChannels: Record<string, RTCDataChannel>
   currentRoom: Room | null
+  isLive: boolean
+  isCreator: boolean
 
   // Actions
   initializeStream: () => Promise<void>
@@ -38,6 +43,8 @@ interface StreamState {
   connectToRoom: (roomId: string) => Promise<void>
   disconnectFromRoom: () => void
   sendChatMessage: (text: string) => void
+  goLive: (title: string, description: string) => Promise<void>
+  endLive: () => Promise<void>
 }
 
 // Configuration for WebRTC peer connections
@@ -75,6 +82,8 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   chatMessages: [],
   dataChannels: {},
   currentRoom: null,
+  isLive: false,
+  isCreator: false,
 
   // Initialize media stream (camera and microphone)
   initializeStream: async () => {
@@ -115,20 +124,41 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 
   // Create a new room
   createRoom: async () => {
-    const roomCode = generateRoomCode()
-    const watchCode = generateWatchCode()
+    try {
+      const response = await fetch("http://localhost:3001/api/rooms", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          creatorId: "user-" + Math.random().toString(36).substr(2, 9),
+        }),
+      })
 
-    const room: Room = {
-      id: roomCode.toLowerCase(),
-      roomCode,
-      watchCode,
+      const data = await response.json()
+      if (!data.success) {
+        throw new Error(data.error)
+      }
+
+      const room: Room = {
+        id: data.room.id,
+        roomCode: data.room.roomCode,
+        watchCode: data.room.watchCode,
+        title: data.room.title,
+        description: data.room.description,
+        isLive: data.room.isLive,
+        createdAt: new Date(),
+      }
+
+      // Connect to the room immediately after creating
+      await get().connectToRoom(room.id)
+
+      set({ currentRoom: room, isCreator: true })
+      return room
+    } catch (error) {
+      console.error("Failed to create room:", error)
+      throw error
     }
-
-    // Connect to the room immediately after creating
-    await get().connectToRoom(room.id)
-
-    set({ currentRoom: room })
-    return room
   },
 
   // Join an existing room by room code
@@ -143,10 +173,11 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       id: roomId,
       roomCode: roomCode.toUpperCase(),
       watchCode,
+      createdAt: new Date(),
     }
 
     await get().connectToRoom(roomId)
-    set({ currentRoom: room })
+    set({ currentRoom: room, isCreator: false })
   },
 
   // Connect to a room (WebRTC setup)
@@ -211,6 +242,20 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       }
     })
 
+    socket.on("room-live-status", (data: { isLive: boolean; title?: string; description?: string }) => {
+      set({
+        isLive: data.isLive,
+        currentRoom: get().currentRoom
+          ? {
+              ...get().currentRoom!,
+              title: data.title || get().currentRoom!.title,
+              description: data.description || get().currentRoom!.description,
+              isLive: data.isLive,
+            }
+          : null,
+      })
+    })
+
     set({ socket, isConnected: true })
 
     // Helper function to create peer connections
@@ -255,7 +300,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       }
 
       // Create data channel for chat if we're the initiator
-      if (socket.id < userId) {
+      if (socket.id! < userId) {
         const dataChannel = pc.createDataChannel("chat")
         setupDataChannel(dataChannel, userId)
       } else {
@@ -274,7 +319,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       })
 
       // Create and send offer if we're the initiator
-      if (socket.id < userId) {
+      if (socket.id! < userId) {
         const offer = await pc.createOffer()
         await pc.setLocalDescription(offer)
 
@@ -354,6 +399,50 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     }
   },
 
+  // Go live
+  goLive: async (title: string, description: string) => {
+    const { socket, currentRoom } = get()
+    if (!socket || !currentRoom) {
+      throw new Error("Not connected to a room")
+    }
+
+    socket.emit("go-live", {
+      roomId: currentRoom.id,
+      title,
+      description,
+    })
+
+    set({
+      isLive: true,
+      currentRoom: {
+        ...currentRoom,
+        title,
+        description,
+        isLive: true,
+      },
+    })
+  },
+
+  // End live
+  endLive: async () => {
+    const { socket, currentRoom } = get()
+    if (!socket || !currentRoom) {
+      throw new Error("Not connected to a room")
+    }
+
+    socket.emit("end-live", {
+      roomId: currentRoom.id,
+    })
+
+    set({
+      isLive: false,
+      currentRoom: {
+        ...currentRoom,
+        isLive: false,
+      },
+    })
+  },
+
   // Disconnect from room
   disconnectFromRoom: () => {
     const { socket, peerConnections, dataChannels } = get()
@@ -381,6 +470,8 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       isConnected: false,
       currentRoom: null,
       chatMessages: [],
+      isLive: false,
+      isCreator: false,
     })
   },
 

@@ -39,19 +39,19 @@ class RoomService {
   }
 
   // Create a new room
-  createRoom(router: types.Router): Room {
+  createRoom(router: types.Router, creatorId: string): Room {
     const roomCode = this.generateRoomCode()
     const watchCode = this.generateWatchCode()
     const roomId = roomCode.toLowerCase()
 
-    const room = new Room(roomId, roomCode, watchCode, router)
+    const room = new Room(roomId, roomCode, watchCode, router, creatorId)
 
     // Store room with multiple indexes
     this.rooms.set(roomId, room)
     this.roomCodeToId.set(roomCode, roomId)
     this.watchCodeToId.set(watchCode, roomId)
 
-    console.log(`Room created: ${roomCode} (Watch: ${watchCode})`)
+    console.log(`Room created: ${roomCode} (Watch: ${watchCode}) by ${creatorId}`)
     return room
   }
 
@@ -70,6 +70,11 @@ class RoomService {
   getRoomByWatchCode(watchCode: string): Room | undefined {
     const roomId = this.watchCodeToId.get(watchCode.toUpperCase())
     return roomId ? this.rooms.get(roomId) : undefined
+  }
+
+  // Get all live rooms
+  getLiveRooms(): Room[] {
+    return Array.from(this.rooms.values()).filter((room) => room.isLive)
   }
 
   // Remove a room and clean up all references
@@ -97,6 +102,7 @@ class RoomService {
   getRoomStats() {
     return {
       totalRooms: this.rooms.size,
+      liveRooms: this.getLiveRooms().length,
       totalPeers: Array.from(this.rooms.values()).reduce((sum, room) => sum + room.peers.size, 0),
       rooms: Array.from(this.rooms.values()).map((room) => room.getStats()),
     }

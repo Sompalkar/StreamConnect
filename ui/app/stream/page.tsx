@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Copy, LayoutGrid, Focus } from "lucide-react"
+import { Copy, LayoutGrid, Focus, Share2, Settings, Users } from "lucide-react"
 import { useStreamStore } from "@/lib/store"
 import { StreamControls } from "@/components/stream-controls"
 import { StreamHeader } from "@/components/stream-header"
@@ -11,6 +11,9 @@ import { VideoGrid } from "@/components/video-grid"
 import { useToast } from "@/components/ui/use-toast"
 import { ChatPanel } from "@/components/chat-panel"
 import { RoomSetup } from "@/components/room-setup"
+import { LiveStreamControls } from "@/components/live-stream-controls"
+import { RoomSettings } from "@/components/room-settings"
+import { motion } from "framer-motion"
 
 export default function StreamPage() {
   const { toast } = useToast()
@@ -30,12 +33,17 @@ export default function StreamPage() {
     currentRoom,
     createRoom,
     joinRoom,
+    goLive,
+    endLive,
+    isLive,
+    isCreator,
   } = useStreamStore()
 
   const [isLoading, setIsLoading] = useState(false)
   const [isChatOpen, setIsChatOpen] = useState(true)
-  const [layoutMode, setLayoutMode] = useState<"equal" | "focus">("equal") // Layout switching
+  const [layoutMode, setLayoutMode] = useState<"equal" | "focus">("equal")
   const [showRoomSetup, setShowRoomSetup] = useState(true)
+  const [showSettings, setShowSettings] = useState(false)
 
   useEffect(() => {
     // Initialize the local stream when the component mounts
@@ -121,6 +129,42 @@ export default function StreamPage() {
     })
   }
 
+  // Handle going live
+  const handleGoLive = async (title: string, description: string) => {
+    try {
+      await goLive(title, description)
+      toast({
+        title: "You're now live!",
+        description: "Your stream is being broadcast to viewers.",
+      })
+    } catch (error) {
+      console.error("Failed to go live:", error)
+      toast({
+        title: "Failed to go live",
+        description: "Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Handle ending live
+  const handleEndLive = async () => {
+    try {
+      await endLive()
+      toast({
+        title: "Live stream ended",
+        description: "Your stream is no longer being broadcast.",
+      })
+    } catch (error) {
+      console.error("Failed to end live:", error)
+      toast({
+        title: "Failed to end live",
+        description: "Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
   // Copy room code to clipboard
   const copyRoomCode = () => {
     if (currentRoom?.roomCode) {
@@ -143,6 +187,33 @@ export default function StreamPage() {
     }
   }
 
+  // Share room
+  const handleShare = async () => {
+    if (!currentRoom) return
+
+    const shareData = {
+      title: "Join my StreamConnect room",
+      text: `Join my live stream! Room code: ${currentRoom.roomCode} | Watch code: ${currentRoom.watchCode}`,
+      url: window.location.href,
+    }
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData)
+      } else {
+        await navigator.clipboard.writeText(
+          `Join my live stream!\nRoom code: ${currentRoom.roomCode}\nWatch code: ${currentRoom.watchCode}\n${window.location.href}`,
+        )
+        toast({
+          title: "Share info copied!",
+          description: "Room and watch codes copied to clipboard.",
+        })
+      }
+    } catch (error) {
+      console.error("Error sharing:", error)
+    }
+  }
+
   // Toggle chat panel
   const toggleChat = () => {
     setIsChatOpen(!isChatOpen)
@@ -156,9 +227,9 @@ export default function StreamPage() {
   // Show room setup if not connected
   if (showRoomSetup || !currentRoom) {
     return (
-      <div className="min-h-screen flex flex-col">
+      <div className="min-h-screen flex flex-col bg-gradient-to-br from-background to-muted/30">
         <StreamHeader />
-        <main className="flex-1 flex items-center justify-center bg-gradient-to-br from-purple-50 to-pink-50">
+        <main className="flex-1 flex items-center justify-center">
           <RoomSetup onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} isLoading={isLoading} />
         </main>
       </div>
@@ -166,58 +237,123 @@ export default function StreamPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <div className="min-h-screen flex flex-col bg-background">
       <StreamHeader />
 
-      {/* Main content - Fixed height to prevent scrolling */}
-      <main className="flex-1 flex flex-col h-[calc(100vh-80px)]">
+      {/* Main content */}
+      <main className="flex-1 flex flex-col">
         <div className="container mx-auto px-4 py-4 flex-1 flex flex-col">
           {/* Room info header */}
-          <Card className="p-4 mb-4 bg-white shadow-sm">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-              <div>
-                <h1 className="text-xl font-bold mb-1">Live Stream Room</h1>
-                <p className="text-gray-600 text-sm">
-                  {remoteStreams.length + (localStream ? 1 : 0)} participants connected
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                {/* Room code */}
-                <div className="flex items-center gap-2 bg-purple-50 px-3 py-2 rounded-lg">
-                  <span className="text-sm font-medium text-purple-700">Room: {currentRoom.roomCode}</span>
-                  <Button size="sm" variant="ghost" onClick={copyRoomCode} className="h-6 w-6 p-0">
-                    <Copy className="h-3 w-3" />
-                  </Button>
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="mb-4">
+            <Card className="p-4 bg-card shadow-card border-2 border-primary/10">
+              <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                <div className="flex items-center gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                        {currentRoom.title || `Room ${currentRoom.roomCode}`}
+                      </h1>
+                      {isLive && (
+                        <div className="flex items-center gap-1 bg-red-100 dark:bg-red-950/20 text-red-700 dark:text-red-400 px-2 py-1 rounded-full text-xs font-medium">
+                          <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                          LIVE
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Users className="h-4 w-4" />
+                        {remoteStreams.length + (localStream ? 1 : 0)} participants
+                      </span>
+                      {isCreator && (
+                        <span className="bg-primary/10 text-primary px-2 py-1 rounded-full text-xs font-medium">
+                          Creator
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                {/* Watch code */}
-                <div className="flex items-center gap-2 bg-blue-50 px-3 py-2 rounded-lg">
-                  <span className="text-sm font-medium text-blue-700">Watch: {currentRoom.watchCode}</span>
-                  <Button size="sm" variant="ghost" onClick={copyWatchCode} className="h-6 w-6 p-0">
-                    <Copy className="h-3 w-3" />
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Live controls for creator */}
+                  {isCreator && (
+                    <LiveStreamControls
+                      isLive={isLive}
+                      onGoLive={handleGoLive}
+                      onEndLive={handleEndLive}
+                      isLoading={isLoading}
+                    />
+                  )}
+
+                  {/* Room code */}
+                  <div className="flex items-center gap-2 bg-primary/10 px-3 py-2 rounded-lg border border-primary/20">
+                    <span className="text-sm font-medium text-primary">Room: {currentRoom.roomCode}</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={copyRoomCode}
+                      className="h-6 w-6 p-0 hover:bg-primary/20"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  </div>
+
+                  {/* Watch code */}
+                  <div className="flex items-center gap-2 bg-secondary/10 px-3 py-2 rounded-lg border border-secondary/20">
+                    <span className="text-sm font-medium text-secondary-foreground">
+                      Watch: {currentRoom.watchCode}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={copyWatchCode}
+                      className="h-6 w-6 p-0 hover:bg-secondary/20"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  </div>
+
+                  {/* Layout toggle */}
+                  <Button size="sm" variant="outline" onClick={toggleLayout} className="gap-2 hover:bg-muted">
+                    {layoutMode === "equal" ? <Focus className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
+                    <span className="hidden sm:inline">{layoutMode === "equal" ? "Focus" : "Equal"}</span>
+                  </Button>
+
+                  {/* Settings */}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowSettings(true)}
+                    className="gap-2 hover:bg-muted"
+                  >
+                    <Settings className="h-4 w-4" />
+                    <span className="hidden sm:inline">Settings</span>
+                  </Button>
+
+                  {/* Share button */}
+                  <Button size="sm" variant="outline" onClick={handleShare} className="gap-2 hover:bg-muted">
+                    <Share2 className="h-4 w-4" />
+                    <span className="hidden sm:inline">Share</span>
+                  </Button>
+
+                  {/* Leave room */}
+                  <Button variant="destructive" size="sm" onClick={handleLeaveRoom}>
+                    Leave
                   </Button>
                 </div>
-
-                {/* Layout toggle */}
-                <Button size="sm" variant="outline" onClick={toggleLayout} className="gap-2">
-                  {layoutMode === "equal" ? <Focus className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
-                  {layoutMode === "equal" ? "Focus" : "Equal"}
-                </Button>
-
-                {/* Leave room */}
-                <Button variant="destructive" size="sm" onClick={handleLeaveRoom}>
-                  Leave Room
-                </Button>
               </div>
-            </div>
-          </Card>
+            </Card>
+          </motion.div>
 
-          {/* Video and chat container - Flexible height */}
-          <div className="flex-1 flex gap-4 min-h-0">
+          {/* Video and chat container */}
+          <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0">
             {/* Video section */}
-            <div className={`${isChatOpen ? "flex-1" : "w-full"} flex flex-col min-h-0`}>
-              <Card className="flex-1 p-4 bg-white shadow-sm min-h-0">
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex-1 flex flex-col min-h-0"
+            >
+              <Card className="flex-1 p-4 bg-card shadow-card min-h-0">
                 <VideoGrid
                   localStream={localStream}
                   remoteStreams={remoteStreams}
@@ -240,17 +376,39 @@ export default function StreamPage() {
                   isChatOpen={isChatOpen}
                 />
               </div>
-            </div>
+            </motion.div>
 
-            {/* Chat panel - Fixed width */}
-            {isChatOpen && (
-              <div className="w-80 flex-shrink-0">
+            {/* Chat panel - Show on large screens or when explicitly opened */}
+            {isChatOpen && window.innerWidth >= 1024 && (
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="w-80 flex-shrink-0">
                 <ChatPanel messages={chatMessages} sendMessage={sendChatMessage} isConnected={isConnected} />
-              </div>
+              </motion.div>
             )}
           </div>
         </div>
       </main>
+
+      {/* Room Settings Modal */}
+      {showSettings && (
+        <RoomSettings
+          room={currentRoom}
+          isCreator={isCreator}
+          onClose={() => setShowSettings(false)}
+          onUpdateRoom={(title, description) => {
+            // Handle room update
+            setShowSettings(false)
+          }}
+        />
+      )}
+
+      {/* Mobile Chat Overlay */}
+      {isChatOpen && window.innerWidth < 1024 && (
+        <div className="fixed inset-0 bg-black/50 z-50 lg:hidden">
+          <div className="absolute right-0 top-0 h-full w-full max-w-sm bg-background border-l">
+            <ChatPanel messages={chatMessages} sendMessage={sendChatMessage} isConnected={isConnected} />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

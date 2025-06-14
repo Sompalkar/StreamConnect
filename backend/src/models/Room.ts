@@ -8,14 +8,22 @@ export class Room {
   router: types.Router
   peers: Map<string, Peer>
   createdAt: Date
+  isLive: boolean
+  title: string
+  description: string
+  creatorId: string
 
-  constructor(id: string, roomCode: string, watchCode: string, router: types.Router) {
+  constructor(id: string, roomCode: string, watchCode: string, router: types.Router, creatorId: string) {
     this.id = id
     this.roomCode = roomCode
     this.watchCode = watchCode
     this.router = router
     this.peers = new Map()
     this.createdAt = new Date()
+    this.isLive = false
+    this.title = `Live Stream ${roomCode}`
+    this.description = "Live streaming session"
+    this.creatorId = creatorId
   }
 
   // Add a peer to the room
@@ -48,6 +56,29 @@ export class Room {
     return this.peers.size === 0
   }
 
+  // Check if user is creator
+  isCreator(peerId: string): boolean {
+    return this.creatorId === peerId
+  }
+
+  // Go live
+  goLive(): void {
+    this.isLive = true
+    console.log(`Room ${this.roomCode} is now live`)
+  }
+
+  // End live
+  endLive(): void {
+    this.isLive = false
+    console.log(`Room ${this.roomCode} ended live stream`)
+  }
+
+  // Update room details
+  updateDetails(title: string, description: string): void {
+    this.title = title
+    this.description = description
+  }
+
   // Get room statistics
   getStats() {
     return {
@@ -56,6 +87,10 @@ export class Room {
       watchCode: this.watchCode,
       peerCount: this.peers.size,
       createdAt: this.createdAt,
+      isLive: this.isLive,
+      title: this.title,
+      description: this.description,
+      creatorId: this.creatorId,
     }
   }
 
@@ -77,6 +112,10 @@ export class Room {
       peerCount: this.peers.size,
       peers: Array.from(this.peers.keys()),
       createdAt: this.createdAt,
+      isLive: this.isLive,
+      title: this.title,
+      description: this.description,
+      creatorId: this.creatorId,
     }
   }
 }

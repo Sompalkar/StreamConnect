@@ -6,10 +6,10 @@ import { hlsService } from "../services/hlsService"
 
 export const roomController = {
   // Create a new room
-  createRoom: async () => {
+  createRoom: async (creatorId: string) => {
     try {
       const router = await mediasoupService.createRouter()
-      const room = roomService.createRoom(router)
+      const room = roomService.createRoom(router, creatorId)
 
       return {
         success: true,
@@ -17,6 +17,9 @@ export const roomController = {
           id: room.id,
           roomCode: room.roomCode,
           watchCode: room.watchCode,
+          isLive: room.isLive,
+          title: room.title,
+          description: room.description,
         },
       }
     } catch (error) {
@@ -56,8 +59,8 @@ export const roomController = {
         socket.emit("user-connected", peerId)
       })
 
-      // Start HLS transcoding if we have enough peers
-      if (room.peers.size >= 2) {
+      // Start HLS transcoding if room is live and we have enough peers
+      if (room.isLive && room.peers.size >= 1) {
         hlsService.startTranscoding(room)
       }
 
@@ -68,12 +71,93 @@ export const roomController = {
           id: room.id,
           roomCode: room.roomCode,
           watchCode: room.watchCode,
+          isLive: room.isLive,
+          title: room.title,
+          description: room.description,
+          isCreator: room.isCreator(socket.id),
         },
         peers: existingPeers,
       }
     } catch (error) {
       console.error(`Error joining room: ${error}`)
       return { success: false, error: `Failed to join room: ${error}` }
+    }
+  },
+
+  // Go live
+  goLive: (socket: Socket, roomId: string, title?: string, description?: string) => {
+    try {
+      const room = roomService.getRoom(roomId)
+      if (!room) return { success: false, error: "Room not found" }
+
+      if (!room.isCreator(socket.id)) {
+        return { success: false, error: "Only room creator can go live" }
+      }
+
+      if (title && description) {
+        room.updateDetails(title, description)
+      }
+
+      room.goLive()
+
+      // Start HLS transcoding
+      hlsService.startTranscoding(room)
+
+      // Notify all peers in the room
+      socket.to(roomId).emit("room-live-status", { isLive: true, title: room.title, description: room.description })
+
+      return { success: true, message: "Room is now live" }
+    } catch (error) {
+      console.error(`Error going live: ${error}`)
+      return { success: false, error: `Failed to go live: ${error}` }
+    }
+  },
+
+  // End live
+  endLive: (socket: Socket, roomId: string) => {
+    try {
+      const room = roomService.getRoom(roomId)
+      if (!room) return { success: false, error: "Room not found" }
+
+      if (!room.isCreator(socket.id)) {
+        return { success: false, error: "Only room creator can end live" }
+      }
+
+      room.endLive()
+
+      // Stop HLS transcoding
+      hlsService.stopTranscoding(roomId)
+
+      // Notify all peers in the room
+      socket.to(roomId).emit("room-live-status", { isLive: false })
+
+      return { success: true, message: "Live stream ended" }
+    } catch (error) {
+      console.error(`Error ending live: ${error}`)
+      return { success: false, error: `Failed to end live: ${error}` }
+    }
+  },
+
+  // Get live rooms for watch page
+  getLiveRooms: () => {
+    try {
+      const liveRooms = roomService.getLiveRooms()
+      return {
+        success: true,
+        rooms: liveRooms.map((room) => ({
+          id: room.id,
+          title: room.title,
+          description: room.description,
+          watchCode: room.watchCode,
+          viewerCount: Math.floor(Math.random() * 100) + 10, // Simulated viewer count
+          thumbnail: `/placeholder.svg?height=180&width=320&text=${encodeURIComponent(room.title)}`,
+          isLive: room.isLive,
+          createdAt: room.createdAt,
+        })),
+      }
+    } catch (error) {
+      console.error(`Error getting live rooms: ${error}`)
+      return { success: false, error: `Failed to get live rooms: ${error}` }
     }
   },
 
@@ -87,7 +171,7 @@ export const roomController = {
       if (!room) {
         // Create room if it doesn't exist (for backward compatibility)
         const router = await mediasoupService.createRouter()
-        room = roomService.createRoom(router)
+        room = roomService.createRoom(router, socket.id)
       }
 
       // Create peer and add to room
@@ -110,8 +194,8 @@ export const roomController = {
         socket.emit("user-connected", peerId)
       })
 
-      // Start HLS transcoding if we have enough peers
-      if (room.peers.size >= 2) {
+      // Start HLS transcoding if room is live and we have enough peers
+      if (room.isLive && room.peers.size >= 1) {
         hlsService.startTranscoding(room)
       }
 
@@ -152,8 +236,8 @@ export const roomController = {
         roomService.removeRoom(roomId)
         hlsService.stopTranscoding(roomId)
         console.log(`Room ${room.roomCode} deleted (empty)`)
-      } else if (room.peers.size < 2) {
-        // Stop HLS transcoding if fewer than 2 peers
+      } else if (room.peers.size < 1 || !room.isLive) {
+        // Stop HLS transcoding if no peers or not live
         hlsService.stopTranscoding(roomId)
       }
 
