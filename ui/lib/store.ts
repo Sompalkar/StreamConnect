@@ -13,7 +13,6 @@ export interface ChatMessage {
 export interface Room {
   id: string
   roomCode: string
-  watchCode: string
   title?: string
   description?: string
   isLive?: boolean
@@ -36,6 +35,7 @@ interface StreamState {
 
   // Actions
   initializeStream: () => Promise<void>
+  stopStream: () => void
   toggleMic: () => void
   toggleCamera: () => void
   createRoom: () => Promise<Room>
@@ -50,25 +50,6 @@ interface StreamState {
 // Configuration for WebRTC peer connections
 const peerConfiguration: RTCConfiguration = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }],
-}
-
-// Generate random room codes
-const generateRoomCode = () => {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-  let result = ""
-  for (let i = 0; i < 6; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return result
-}
-
-const generateWatchCode = () => {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-  let result = "WATCH"
-  for (let i = 0; i < 3; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return result
 }
 
 export const useStreamStore = create<StreamState>((set, get) => ({
@@ -89,14 +70,33 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   initializeStream: async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 },
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
       })
 
       set({ localStream: stream, isMicOn: true, isCameraOn: true })
     } catch (error) {
       console.error("Error accessing media devices:", error)
       throw error
+    }
+  },
+
+  // Stop media stream
+  stopStream: () => {
+    const { localStream } = get()
+    if (localStream) {
+      localStream.getTracks().forEach((track) => {
+        track.stop()
+      })
+      set({ localStream: null })
     }
   },
 
@@ -143,7 +143,6 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       const room: Room = {
         id: data.room.id,
         roomCode: data.room.roomCode,
-        watchCode: data.room.watchCode,
         title: data.room.title,
         description: data.room.description,
         isLive: data.room.isLive,
@@ -165,14 +164,9 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   joinRoom: async (roomCode: string) => {
     const roomId = roomCode.toLowerCase()
 
-    // For simplicity, we'll generate a watch code for joined rooms
-    // In a real app, this would come from the server
-    const watchCode = generateWatchCode()
-
     const room: Room = {
       id: roomId,
       roomCode: roomCode.toUpperCase(),
-      watchCode,
       createdAt: new Date(),
     }
 

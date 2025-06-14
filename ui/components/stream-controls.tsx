@@ -1,8 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
-import { Mic, MicOff, Video, VideoOff, Share2, MessageSquare } from "lucide-react"
+import { Mic, MicOff, Video, VideoOff, MessageSquare } from "lucide-react"
 
 interface StreamControlsProps {
   isMicOn: boolean
@@ -25,78 +24,42 @@ export function StreamControls({
   toggleChat,
   isChatOpen,
 }: StreamControlsProps) {
-  const handleShare = async () => {
-    try {
-      await navigator.share({
-        title: "StreamConnect",
-        text: "Join me on StreamConnect!",
-        url: window.location.href,
-      })
-    } catch (error) {
-      console.error("Error sharing:", error)
-    }
-  }
-
   return (
-    <Card className="p-6 bg-card shadow-card">
-      <div className="flex flex-wrap justify-center gap-4">
+    <div className="flex justify-center">
+      <div className="flex items-center gap-3 bg-card/80 backdrop-blur-sm border rounded-full px-6 py-3 shadow-lg">
         <Button
-          variant={isMicOn ? "default" : "outline"}
+          variant={isMicOn ? "default" : "destructive"}
           size="lg"
-          className={`gap-2 ${
-            isMicOn
-              ? "gradient-primary text-primary-foreground shadow-glow"
-              : "border-destructive/20 text-destructive hover:bg-destructive/10"
+          className={`rounded-full w-12 h-12 p-0 ${
+            isMicOn ? "bg-muted hover:bg-muted/80 text-foreground" : "bg-red-600 hover:bg-red-700 text-white"
           }`}
           onClick={toggleMic}
           disabled={isLoading || !isConnected}
         >
-          {isMicOn ? (
-            <>
-              <Mic className="h-5 w-5" /> Microphone On
-            </>
-          ) : (
-            <>
-              <MicOff className="h-5 w-5" /> Microphone Off
-            </>
-          )}
+          {isMicOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
         </Button>
 
         <Button
-          variant={isCameraOn ? "default" : "outline"}
+          variant={isCameraOn ? "default" : "destructive"}
           size="lg"
-          className={`gap-2 ${
-            isCameraOn
-              ? "gradient-primary text-primary-foreground shadow-glow"
-              : "border-destructive/20 text-destructive hover:bg-destructive/10"
+          className={`rounded-full w-12 h-12 p-0 ${
+            isCameraOn ? "bg-muted hover:bg-muted/80 text-foreground" : "bg-red-600 hover:bg-red-700 text-white"
           }`}
           onClick={toggleCamera}
           disabled={isLoading || !isConnected}
         >
-          {isCameraOn ? (
-            <>
-              <Video className="h-5 w-5" /> Camera On
-            </>
-          ) : (
-            <>
-              <VideoOff className="h-5 w-5" /> Camera Off
-            </>
-          )}
+          {isCameraOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
         </Button>
 
         <Button
           variant={isChatOpen ? "default" : "outline"}
           size="lg"
-          className={`gap-2 ${isChatOpen ? "gradient-secondary text-primary-foreground" : "hover:bg-muted"}`}
+          className="rounded-full w-12 h-12 p-0 lg:hidden"
           onClick={toggleChat}
         >
-          <MessageSquare className="h-5 w-5" /> {isChatOpen ? "Hide Chat" : "Show Chat"}
-        </Button>
-
-        <Button variant="outline" size="lg" className="gap-2 hover:bg-muted" onClick={handleShare}>
-          <Share2 className="h-5 w-5" /> Share Stream
+          <MessageSquare className="h-5 w-5" />
         </Button>
       </div>
-    </Card>
+    </div>
   )
 }

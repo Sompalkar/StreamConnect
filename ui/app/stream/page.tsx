@@ -1,9 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
-import { Copy, LayoutGrid, Focus, Share2, Settings, Users } from "lucide-react"
+import { LayoutGrid, Focus, Share2, Settings, Users, MessageSquare } from "lucide-react"
 import { useStreamStore } from "@/lib/store"
 import { StreamControls } from "@/components/stream-controls"
 import { StreamHeader } from "@/components/stream-header"
@@ -13,7 +12,7 @@ import { ChatPanel } from "@/components/chat-panel"
 import { RoomSetup } from "@/components/room-setup"
 import { LiveStreamControls } from "@/components/live-stream-controls"
 import { RoomSettings } from "@/components/room-settings"
-import { motion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
 
 export default function StreamPage() {
   const { toast } = useToast()
@@ -37,48 +36,37 @@ export default function StreamPage() {
     endLive,
     isLive,
     isCreator,
+    stopStream,
   } = useStreamStore()
 
   const [isLoading, setIsLoading] = useState(false)
-  const [isChatOpen, setIsChatOpen] = useState(true)
+  const [isChatOpen, setIsChatOpen] = useState(false)
   const [layoutMode, setLayoutMode] = useState<"equal" | "focus">("equal")
   const [showRoomSetup, setShowRoomSetup] = useState(true)
   const [showSettings, setShowSettings] = useState(false)
+  const chatOverlayRef = useRef<HTMLDivElement>(null)
 
+  // Handle outside click for chat overlay
   useEffect(() => {
-    // Initialize the local stream when the component mounts
-    const init = async () => {
-      setIsLoading(true)
-      try {
-        await initializeStream()
-        toast({
-          title: "Camera and microphone initialized",
-          description: "You can now create or join a room.",
-        })
-      } catch (error) {
-        console.error("Failed to initialize stream:", error)
-        toast({
-          title: "Failed to access camera or microphone",
-          description: "Please check your permissions and try again.",
-          variant: "destructive",
-        })
-      } finally {
-        setIsLoading(false)
+    const handleClickOutside = (event: MouseEvent) => {
+      if (chatOverlayRef.current && !chatOverlayRef.current.contains(event.target as Node)) {
+        setIsChatOpen(false)
       }
     }
 
-    init()
-
-    // Clean up when the component unmounts
-    return () => {
-      disconnectFromRoom()
+    if (isChatOpen) {
+      document.addEventListener("mousedown", handleClickOutside)
+      return () => document.removeEventListener("mousedown", handleClickOutside)
     }
-  }, [])
+  }, [isChatOpen])
 
   // Handle creating a new room
   const handleCreateRoom = async () => {
     setIsLoading(true)
     try {
+      // Initialize stream first
+      await initializeStream()
+
       const room = await createRoom()
       setShowRoomSetup(false)
       toast({
@@ -89,7 +77,7 @@ export default function StreamPage() {
       console.error("Failed to create room:", error)
       toast({
         title: "Failed to create room",
-        description: "Please try again.",
+        description: "Please check your camera and microphone permissions.",
         variant: "destructive",
       })
     } finally {
@@ -101,6 +89,9 @@ export default function StreamPage() {
   const handleJoinRoom = async (roomCode: string) => {
     setIsLoading(true)
     try {
+      // Initialize stream first
+      await initializeStream()
+
       await joinRoom(roomCode)
       setShowRoomSetup(false)
       toast({
@@ -111,7 +102,7 @@ export default function StreamPage() {
       console.error("Failed to join room:", error)
       toast({
         title: "Failed to join room",
-        description: "Please check the room code and try again.",
+        description: "Please check the room code and your camera/microphone permissions.",
         variant: "destructive",
       })
     } finally {
@@ -122,7 +113,9 @@ export default function StreamPage() {
   // Handle leaving the room
   const handleLeaveRoom = () => {
     disconnectFromRoom()
+    stopStream()
     setShowRoomSetup(true)
+    setIsChatOpen(false)
     toast({
       title: "Left the room",
       description: "You have disconnected from the stream.",
@@ -176,24 +169,13 @@ export default function StreamPage() {
     }
   }
 
-  // Copy watch code to clipboard
-  const copyWatchCode = () => {
-    if (currentRoom?.watchCode) {
-      navigator.clipboard.writeText(currentRoom.watchCode)
-      toast({
-        title: "Watch code copied!",
-        description: "Share this code with viewers to watch the stream.",
-      })
-    }
-  }
-
   // Share room
   const handleShare = async () => {
     if (!currentRoom) return
 
     const shareData = {
       title: "Join my StreamConnect room",
-      text: `Join my live stream! Room code: ${currentRoom.roomCode} | Watch code: ${currentRoom.watchCode}`,
+      text: `Join my live stream! Room code: ${currentRoom.roomCode}`,
       url: window.location.href,
     }
 
@@ -202,11 +184,11 @@ export default function StreamPage() {
         await navigator.share(shareData)
       } else {
         await navigator.clipboard.writeText(
-          `Join my live stream!\nRoom code: ${currentRoom.roomCode}\nWatch code: ${currentRoom.watchCode}\n${window.location.href}`,
+          `Join my live stream!\nRoom code: ${currentRoom.roomCode}\n${window.location.href}`,
         )
         toast({
           title: "Share info copied!",
-          description: "Room and watch codes copied to clipboard.",
+          description: "Room code copied to clipboard.",
         })
       }
     } catch (error) {
@@ -236,155 +218,174 @@ export default function StreamPage() {
     )
   }
 
+  const totalParticipants = remoteStreams.length + (localStream ? 1 : 0)
+
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="h-screen flex flex-col bg-background overflow-hidden">
       <StreamHeader />
 
-      {/* Main content */}
-      <main className="flex-1 flex flex-col">
-        <div className="container mx-auto px-4 py-4 flex-1 flex flex-col">
-          {/* Room info header */}
-          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="mb-4">
-            <Card className="p-4 bg-card shadow-card border-2 border-primary/10">
-              <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-                <div className="flex items-center gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-                        {currentRoom.title || `Room ${currentRoom.roomCode}`}
-                      </h1>
-                      {isLive && (
-                        <div className="flex items-center gap-1 bg-red-100 dark:bg-red-950/20 text-red-700 dark:text-red-400 px-2 py-1 rounded-full text-xs font-medium">
-                          <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                          LIVE
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Users className="h-4 w-4" />
-                        {remoteStreams.length + (localStream ? 1 : 0)} participants
+      {/* Main content - Google Meet style layout */}
+      <main className="flex-1 flex flex-col min-h-0">
+        {/* Top bar with room info and controls */}
+        <div className="flex-shrink-0 border-b bg-card">
+          <div className="container mx-auto px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-lg font-semibold">{currentRoom.title || `Room ${currentRoom.roomCode}`}</h1>
+                    {isLive && (
+                      <div className="flex items-center gap-1 bg-red-100 dark:bg-red-950/20 text-red-700 dark:text-red-400 px-2 py-1 rounded-full text-xs font-medium">
+                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                        LIVE
+                      </div>
+                    )}
+                    {isCreator && (
+                      <span className="bg-primary/10 text-primary px-2 py-1 rounded-full text-xs font-medium">
+                        Host
                       </span>
-                      {isCreator && (
-                        <span className="bg-primary/10 text-primary px-2 py-1 rounded-full text-xs font-medium">
-                          Creator
-                        </span>
-                      )}
-                    </div>
+                    )}
                   </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  {/* Live controls for creator */}
-                  {isCreator && (
-                    <LiveStreamControls
-                      isLive={isLive}
-                      onGoLive={handleGoLive}
-                      onEndLive={handleEndLive}
-                      isLoading={isLoading}
-                    />
-                  )}
-
-                  {/* Room code */}
-                  <div className="flex items-center gap-2 bg-primary/10 px-3 py-2 rounded-lg border border-primary/20">
-                    <span className="text-sm font-medium text-primary">Room: {currentRoom.roomCode}</span>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={copyRoomCode}
-                      className="h-6 w-6 p-0 hover:bg-primary/20"
-                    >
-                      <Copy className="h-3 w-3" />
-                    </Button>
-                  </div>
-
-                  {/* Watch code */}
-                  <div className="flex items-center gap-2 bg-secondary/10 px-3 py-2 rounded-lg border border-secondary/20">
-                    <span className="text-sm font-medium text-secondary-foreground">
-                      Watch: {currentRoom.watchCode}
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <Users className="h-3 w-3" />
+                      {totalParticipants} participant{totalParticipants !== 1 ? "s" : ""}
                     </span>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={copyWatchCode}
-                      className="h-6 w-6 p-0 hover:bg-secondary/20"
-                    >
-                      <Copy className="h-3 w-3" />
-                    </Button>
+                    <span>Room: {currentRoom.roomCode}</span>
                   </div>
-
-                  {/* Layout toggle */}
-                  <Button size="sm" variant="outline" onClick={toggleLayout} className="gap-2 hover:bg-muted">
-                    {layoutMode === "equal" ? <Focus className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
-                    <span className="hidden sm:inline">{layoutMode === "equal" ? "Focus" : "Equal"}</span>
-                  </Button>
-
-                  {/* Settings */}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setShowSettings(true)}
-                    className="gap-2 hover:bg-muted"
-                  >
-                    <Settings className="h-4 w-4" />
-                    <span className="hidden sm:inline">Settings</span>
-                  </Button>
-
-                  {/* Share button */}
-                  <Button size="sm" variant="outline" onClick={handleShare} className="gap-2 hover:bg-muted">
-                    <Share2 className="h-4 w-4" />
-                    <span className="hidden sm:inline">Share</span>
-                  </Button>
-
-                  {/* Leave room */}
-                  <Button variant="destructive" size="sm" onClick={handleLeaveRoom}>
-                    Leave
-                  </Button>
                 </div>
               </div>
-            </Card>
-          </motion.div>
 
-          {/* Video and chat container */}
-          <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0">
-            {/* Video section */}
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="flex-1 flex flex-col min-h-0"
-            >
-              <Card className="flex-1 p-4 bg-card shadow-card min-h-0">
-                <VideoGrid
-                  localStream={localStream}
-                  remoteStreams={remoteStreams}
-                  isMicOn={isMicOn}
-                  isCameraOn={isCameraOn}
-                  layoutMode={layoutMode}
-                />
-              </Card>
+              <div className="flex items-center gap-2">
+                {/* Live controls for creator */}
+                {isCreator && (
+                  <LiveStreamControls
+                    isLive={isLive}
+                    onGoLive={handleGoLive}
+                    onEndLive={handleEndLive}
+                    isLoading={isLoading}
+                  />
+                )}
 
-              {/* Controls */}
-              <div className="mt-4">
-                <StreamControls
-                  isMicOn={isMicOn}
-                  isCameraOn={isCameraOn}
-                  toggleMic={toggleMic}
-                  toggleCamera={toggleCamera}
-                  isConnected={isConnected}
-                  isLoading={isLoading}
-                  toggleChat={toggleChat}
-                  isChatOpen={isChatOpen}
-                />
+                {/* Layout toggle - only show if multiple participants */}
+                {totalParticipants > 1 && (
+                  <Button size="sm" variant="outline" onClick={toggleLayout} className="gap-2">
+                    {layoutMode === "equal" ? <Focus className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
+                    <span className="hidden sm:inline">{layoutMode === "equal" ? "Focus" : "Grid"}</span>
+                  </Button>
+                )}
+
+                {/* Chat toggle */}
+                <Button
+                  size="sm"
+                  variant={isChatOpen ? "default" : "outline"}
+                  onClick={toggleChat}
+                  className="gap-2 relative"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  <span className="hidden sm:inline">Chat</span>
+                  {chatMessages.length > 0 && !isChatOpen && (
+                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></div>
+                  )}
+                </Button>
+
+                {/* Settings */}
+                <Button size="sm" variant="outline" onClick={() => setShowSettings(true)} className="gap-2">
+                  <Settings className="h-4 w-4" />
+                  <span className="hidden sm:inline">Settings</span>
+                </Button>
+
+                {/* Share */}
+                <Button size="sm" variant="outline" onClick={handleShare} className="gap-2">
+                  <Share2 className="h-4 w-4" />
+                  <span className="hidden sm:inline">Share</span>
+                </Button>
+
+                {/* Leave */}
+                <Button variant="destructive" size="sm" onClick={handleLeaveRoom}>
+                  Leave
+                </Button>
               </div>
-            </motion.div>
-
-            {/* Chat panel - Show on large screens or when explicitly opened */}
-            {isChatOpen && window.innerWidth >= 1024 && (
-              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="w-80 flex-shrink-0">
-                <ChatPanel messages={chatMessages} sendMessage={sendChatMessage} isConnected={isConnected} />
-              </motion.div>
-            )}
+            </div>
           </div>
+        </div>
+
+        {/* Video area - Google Meet style */}
+        <div className="flex-1 flex min-h-0 relative">
+          {/* Main video area */}
+          <div className="flex-1 flex flex-col min-h-0 p-4">
+            <div className="flex-1 min-h-0">
+              <VideoGrid
+                localStream={localStream}
+                remoteStreams={remoteStreams}
+                isMicOn={isMicOn}
+                isCameraOn={isCameraOn}
+                layoutMode={layoutMode}
+              />
+            </div>
+
+            {/* Bottom controls */}
+            <div className="flex-shrink-0 pt-4">
+              <StreamControls
+                isMicOn={isMicOn}
+                isCameraOn={isCameraOn}
+                toggleMic={toggleMic}
+                toggleCamera={toggleCamera}
+                isConnected={isConnected}
+                isLoading={isLoading}
+                toggleChat={toggleChat}
+                isChatOpen={isChatOpen}
+              />
+            </div>
+          </div>
+
+          {/* Desktop chat sidebar */}
+          <AnimatePresence>
+            {isChatOpen && (
+              <>
+                {/* Desktop sidebar */}
+                <motion.div
+                  initial={{ width: 0, opacity: 0 }}
+                  animate={{ width: 320, opacity: 1 }}
+                  exit={{ width: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="hidden lg:flex flex-col border-l bg-card overflow-hidden"
+                >
+                  <ChatPanel
+                    messages={chatMessages}
+                    sendMessage={sendChatMessage}
+                    isConnected={isConnected}
+                    onClose={() => setIsChatOpen(false)}
+                  />
+                </motion.div>
+
+                {/* Mobile/tablet overlay */}
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="lg:hidden fixed inset-0 bg-black/50 z-50"
+                >
+                  <motion.div
+                    ref={chatOverlayRef}
+                    initial={{ x: "100%" }}
+                    animate={{ x: 0 }}
+                    exit={{ x: "100%" }}
+                    transition={{ duration: 0.3, type: "spring", damping: 25 }}
+                    className="absolute right-0 top-0 h-full w-full max-w-sm bg-background border-l shadow-xl"
+                  >
+                    <ChatPanel
+                      messages={chatMessages}
+                      sendMessage={sendChatMessage}
+                      isConnected={isConnected}
+                      onClose={() => setIsChatOpen(false)}
+                    />
+                  </motion.div>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
         </div>
       </main>
 
@@ -395,19 +396,9 @@ export default function StreamPage() {
           isCreator={isCreator}
           onClose={() => setShowSettings(false)}
           onUpdateRoom={(title, description) => {
-            // Handle room update
             setShowSettings(false)
           }}
         />
-      )}
-
-      {/* Mobile Chat Overlay */}
-      {isChatOpen && window.innerWidth < 1024 && (
-        <div className="fixed inset-0 bg-black/50 z-50 lg:hidden">
-          <div className="absolute right-0 top-0 h-full w-full max-w-sm bg-background border-l">
-            <ChatPanel messages={chatMessages} sendMessage={sendChatMessage} isConnected={isConnected} />
-          </div>
-        </div>
       )}
     </div>
   )

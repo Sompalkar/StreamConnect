@@ -12,11 +12,11 @@ interface LiveStream {
   id: string
   title: string
   description: string
-  watchCode: string
   viewerCount: number
   thumbnail: string
   isLive: boolean
   createdAt: string
+  roomCode: string
 }
 
 // Mock data for demonstration
@@ -25,7 +25,7 @@ const mockStreams: LiveStream[] = [
     id: "1",
     title: "Tech Talk: Building Modern Web Apps",
     description: "Join us for an in-depth discussion about modern web development practices and tools.",
-    watchCode: "WATCH123",
+    roomCode: "ABC123",
     viewerCount: 234,
     thumbnail: "/placeholder.svg?height=180&width=320&text=Tech+Talk",
     isLive: true,
@@ -35,7 +35,7 @@ const mockStreams: LiveStream[] = [
     id: "2",
     title: "Creative Design Workshop",
     description: "Learn the latest design trends and techniques in this interactive workshop.",
-    watchCode: "WATCH456",
+    roomCode: "DEF456",
     viewerCount: 156,
     thumbnail: "/placeholder.svg?height=180&width=320&text=Design+Workshop",
     isLive: true,
@@ -45,7 +45,7 @@ const mockStreams: LiveStream[] = [
     id: "3",
     title: "Gaming Session: Latest Releases",
     description: "Playing and reviewing the hottest new games with live commentary.",
-    watchCode: "WATCH789",
+    roomCode: "GHI789",
     viewerCount: 89,
     thumbnail: "/placeholder.svg?height=180&width=320&text=Gaming+Session",
     isLive: true,
@@ -55,7 +55,7 @@ const mockStreams: LiveStream[] = [
     id: "4",
     title: "Cooking Masterclass",
     description: "Learn to cook delicious meals with professional chef techniques.",
-    watchCode: "WATCH101",
+    roomCode: "JKL101",
     viewerCount: 67,
     thumbnail: "/placeholder.svg?height=180&width=320&text=Cooking+Class",
     isLive: true,
@@ -65,7 +65,7 @@ const mockStreams: LiveStream[] = [
     id: "5",
     title: "Music Production Live",
     description: "Creating beats and producing music live with audience interaction.",
-    watchCode: "WATCH202",
+    roomCode: "MNO202",
     viewerCount: 123,
     thumbnail: "/placeholder.svg?height=180&width=320&text=Music+Production",
     isLive: true,
@@ -75,7 +75,7 @@ const mockStreams: LiveStream[] = [
     id: "6",
     title: "Fitness & Wellness Session",
     description: "Join our live workout session and wellness tips for a healthy lifestyle.",
-    watchCode: "WATCH303",
+    roomCode: "PQR303",
     viewerCount: 45,
     thumbnail: "/placeholder.svg?height=180&width=320&text=Fitness+Session",
     isLive: true,
@@ -148,9 +148,9 @@ export default function WatchPage() {
     return () => clearInterval(interval)
   }, [])
 
-  const handleWatchStream = (watchCode: string) => {
-    // Navigate to stream viewer or open in modal
-    window.open(`/watch/${watchCode}`, "_blank")
+  const handleWatchStream = (roomCode: string) => {
+    // Navigate to stream page to join as viewer
+    window.open(`/stream?join=${roomCode}`, "_blank")
   }
 
   const formatTimeAgo = (dateString: string) => {
@@ -276,10 +276,10 @@ export default function WatchPage() {
                           <Button
                             size="lg"
                             className="gradient-primary text-primary-foreground shadow-glow"
-                            onClick={() => handleWatchStream(stream.watchCode)}
+                            onClick={() => handleWatchStream(stream.roomCode)}
                           >
                             <Play className="h-5 w-5 mr-2" />
-                            Watch Now
+                            Join Stream
                           </Button>
                         </div>
                       </div>
