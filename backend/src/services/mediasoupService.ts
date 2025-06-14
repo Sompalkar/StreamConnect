@@ -1,8 +1,8 @@
 import { createWorker } from "mediasoup"
-import type { Worker, Router } from "mediasoup/node/lib/types"
+import type { types } from "mediasoup"
 
 class MediasoupService {
-  private worker: Worker | null = null
+  private worker: types.Worker | null = null
   private initialized = false
   private initializing: Promise<void> | null = null
 
@@ -31,7 +31,7 @@ class MediasoupService {
     return this.initializing
   }
 
-  async getWorker(): Promise<Worker> {
+  async getWorker(): Promise<types.Worker> {
     if (!this.initialized) {
       await this.initialize()
     }
@@ -43,7 +43,7 @@ class MediasoupService {
     return this.worker
   }
 
-  async createRouter(): Promise<Router> {
+  async createRouter(): Promise<types.Router> {
     const worker = await this.getWorker()
 
     return worker.createRouter({

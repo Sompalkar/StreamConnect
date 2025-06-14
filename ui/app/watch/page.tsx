@@ -1,47 +1,88 @@
 "use client"
 
-import type React from "react"
-
-import { useEffect, useRef, useState } from "react"
-import { Card } from "@/components/ui/card"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Play, Pause, Volume2, VolumeX, Maximize, Users, Eye } from "lucide-react"
-import Hls from "hls.js"
+import { Card } from "@/components/ui/card"
+import { Copy, LayoutGrid, Focus, Share2 } from "lucide-react"
+import { useStreamStore } from "@/lib/store"
+import { StreamControls } from "@/components/stream-controls"
 import { StreamHeader } from "@/components/stream-header"
+import { VideoGrid } from "@/components/video-grid"
 import { useToast } from "@/components/ui/use-toast"
+import { ChatPanel } from "@/components/chat-panel"
+import { RoomSetup } from "@/components/room-setup"
+import { motion } from "framer-motion"
 
-export default function WatchPage() {
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [isMuted, setIsMuted] = useState(false)
-  const [viewerCount, setViewerCount] = useState(0)
-  const [isLoading, setIsLoading] = useState(false)
-  const [watchCode, setWatchCode] = useState("")
-  const [isWatching, setIsWatching] = useState(false)
-  const [streamTitle, setStreamTitle] = useState("")
+export default function StreamPage() {
   const { toast } = useToast()
+  const {
+    localStream,
+    remoteStreams,
+    isMicOn,
+    isCameraOn,
+    toggleMic,
+    toggleCamera,
+    initializeStream,
+    connectToRoom,
+    disconnectFromRoom,
+    isConnected,
+    sendChatMessage,
+    chatMessages,
+    currentRoom,
+    createRoom,
+    joinRoom,
+  } = useStreamStore()
 
-  // Handle joining a stream with watch code
-  const handleJoinStream = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!watchCode.trim()) return
+  const [isLoading, setIsLoading] = useState(false)
+  const [isChatOpen, setIsChatOpen] = useState(true)
+  const [layoutMode, setLayoutMode] = useState<"equal" | "focus">("equal")
+  const [showRoomSetup, setShowRoomSetup] = useState(true)
 
+  useEffect(() => {
+    // Initialize the local stream when the component mounts
+    const init = async () => {
+      setIsLoading(true)
+      try {
+        await initializeStream()
+        toast({
+          title: "Camera and microphone initialized",
+          description: "You can now create or join a room.",
+        })
+      } catch (error) {
+        console.error("Failed to initialize stream:", error)
+        toast({
+          title: "Failed to access camera or microphone",
+          description: "Please check your permissions and try again.",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    init()
+
+    // Clean up when the component unmounts
+    return () => {
+      disconnectFromRoom()
+    }
+  }, [])
+
+  // Handle creating a new room
+  const handleCreateRoom = async () => {
     setIsLoading(true)
     try {
-      // Initialize HLS player with the watch code
-      await initHls(watchCode.trim().toUpperCase())
-      setIsWatching(true)
-      setStreamTitle(`Stream ${watchCode.toUpperCase()}`)
+      const room = await createRoom()
+      setShowRoomSetup(false)
       toast({
-        title: "Connected to stream",
-        description: "You are now watching the live stream.",
+        title: "Room created successfully!",
+        description: `Room code: ${room.roomCode}. Share this with others to join.`,
       })
     } catch (error) {
-      console.error("Failed to join stream:", error)
+      console.error("Failed to create room:", error)
       toast({
-        title: "Failed to connect",
-        description: "Please check the watch code and try again.",
+        title: "Failed to create room",
+        description: "Please try again.",
         variant: "destructive",
       })
     } finally {
@@ -49,223 +90,220 @@ export default function WatchPage() {
     }
   }
 
-  // Initialize HLS player
-  const initHls = async (code: string) => {
-    if (!videoRef.current) return
-
-    if (Hls.isSupported()) {
-      const hls = new Hls({
-        debug: false,
-        startLevel: 2,
-        enableWorker: true,
+  // Handle joining an existing room
+  const handleJoinRoom = async (roomCode: string) => {
+    setIsLoading(true)
+    try {
+      await joinRoom(roomCode)
+      setShowRoomSetup(false)
+      toast({
+        title: "Joined room successfully!",
+        description: "You are now connected to the stream.",
       })
-
-      // Use the watch code to get the correct HLS stream
-      const hlsUrl = `http://localhost:3001/hls/${code}/stream.m3u8`
-
-      hls.loadSource(hlsUrl)
-      hls.attachMedia(videoRef.current)
-
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        setIsLoading(false)
-        videoRef.current
-          ?.play()
-          .then(() => {
-            setIsPlaying(true)
-          })
-          .catch((error) => {
-            console.error("Playback failed:", error)
-            toast({
-              title: "Playback failed",
-              description: "Could not start the stream automatically.",
-              variant: "destructive",
-            })
-          })
+    } catch (error) {
+      console.error("Failed to join room:", error)
+      toast({
+        title: "Failed to join room",
+        description: "Please check the room code and try again.",
+        variant: "destructive",
       })
-
-      hls.on(Hls.Events.ERROR, (event, data) => {
-        if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              toast({
-                title: "Network error",
-                description: "Trying to reconnect to the stream...",
-                variant: "destructive",
-              })
-              hls.startLoad()
-              break
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              toast({
-                title: "Media error",
-                description: "Trying to recover...",
-                variant: "destructive",
-              })
-              hls.recoverMediaError()
-              break
-            default:
-              toast({
-                title: "Stream error",
-                description: "Could not load the stream.",
-                variant: "destructive",
-              })
-              break
-          }
-        }
-      })
-    } else if (videoRef.current.canPlayType("application/vnd.apple.mpegurl")) {
-      // For Safari which has native HLS support
-      videoRef.current.src = `http://localhost:3001/hls/${code}/stream.m3u8`
-      videoRef.current.addEventListener("loadedmetadata", () => {
-        setIsLoading(false)
-        videoRef.current
-          ?.play()
-          .then(() => setIsPlaying(true))
-          .catch((error) => console.error("Playback failed:", error))
-      })
-    } else {
-      throw new Error("HLS not supported")
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  // Simulate viewer count updates
-  useEffect(() => {
-    if (isWatching) {
-      const interval = setInterval(() => {
-        setViewerCount(Math.floor(Math.random() * 50) + 10)
-      }, 5000)
-      return () => clearInterval(interval)
-    }
-  }, [isWatching])
+  // Handle leaving the room
+  const handleLeaveRoom = () => {
+    disconnectFromRoom()
+    setShowRoomSetup(true)
+    toast({
+      title: "Left the room",
+      description: "You have disconnected from the stream.",
+    })
+  }
 
-  // Video control functions
-  const togglePlay = () => {
-    if (videoRef.current) {
-      if (isPlaying) {
-        videoRef.current.pause()
+  // Copy room code to clipboard
+  const copyRoomCode = () => {
+    if (currentRoom?.roomCode) {
+      navigator.clipboard.writeText(currentRoom.roomCode)
+      toast({
+        title: "Room code copied!",
+        description: "Share this code with others to join the stream.",
+      })
+    }
+  }
+
+  // Copy watch code to clipboard
+  const copyWatchCode = () => {
+    if (currentRoom?.watchCode) {
+      navigator.clipboard.writeText(currentRoom.watchCode)
+      toast({
+        title: "Watch code copied!",
+        description: "Share this code with viewers to watch the stream.",
+      })
+    }
+  }
+
+  // Share room
+  const handleShare = async () => {
+    if (!currentRoom) return
+
+    const shareData = {
+      title: "Join my StreamConnect room",
+      text: `Join my live stream! Room code: ${currentRoom.roomCode} | Watch code: ${currentRoom.watchCode}`,
+      url: window.location.href,
+    }
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData)
       } else {
-        videoRef.current.play()
+        await navigator.clipboard.writeText(
+          `Join my live stream!\nRoom code: ${currentRoom.roomCode}\nWatch code: ${currentRoom.watchCode}\n${window.location.href}`,
+        )
+        toast({
+          title: "Share info copied!",
+          description: "Room and watch codes copied to clipboard.",
+        })
       }
-      setIsPlaying(!isPlaying)
+    } catch (error) {
+      console.error("Error sharing:", error)
     }
   }
 
-  const toggleMute = () => {
-    if (videoRef.current) {
-      videoRef.current.muted = !videoRef.current.muted
-      setIsMuted(!isMuted)
-    }
+  // Toggle chat panel
+  const toggleChat = () => {
+    setIsChatOpen(!isChatOpen)
   }
 
-  const toggleFullscreen = () => {
-    if (videoRef.current) {
-      if (document.fullscreenElement) {
-        document.exitFullscreen()
-      } else {
-        videoRef.current.requestFullscreen()
-      }
-    }
+  // Switch layout mode
+  const toggleLayout = () => {
+    setLayoutMode(layoutMode === "equal" ? "focus" : "equal")
   }
 
-  // Show watch code input if not watching
-  if (!isWatching) {
+  // Show room setup if not connected
+  if (showRoomSetup || !currentRoom) {
     return (
-      <div className="min-h-screen flex flex-col">
+      <div className="min-h-screen flex flex-col bg-gradient-to-br from-background to-muted/30">
         <StreamHeader />
-        <main className="flex-1 flex items-center justify-center bg-gradient-to-br from-blue-50 to-cyan-50">
-          <div className="w-full max-w-md mx-auto p-6">
-            <Card className="p-8 border-2 border-blue-100">
-              <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                  <Eye className="h-8 w-8 text-white" />
-                </div>
-                <h1 className="text-2xl font-bold mb-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-transparent bg-clip-text">
-                  Watch Live Stream
-                </h1>
-                <p className="text-gray-600">Enter a watch code to view a live stream</p>
-              </div>
-
-              <form onSubmit={handleJoinStream} className="space-y-4">
-                <Input
-                  placeholder="Enter watch code (e.g., WATCH123)"
-                  value={watchCode}
-                  onChange={(e) => setWatchCode(e.target.value.toUpperCase())}
-                  className="text-center text-lg font-mono tracking-wider"
-                  maxLength={8}
-                />
-                <Button
-                  type="submit"
-                  disabled={isLoading || !watchCode.trim()}
-                  className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700"
-                >
-                  {isLoading ? "Connecting..." : "Watch Stream"}
-                </Button>
-              </form>
-
-              <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-                <p className="text-sm text-blue-700 text-center">
-                  Get a watch code from someone who is streaming to view their live session.
-                </p>
-              </div>
-            </Card>
-          </div>
+        <main className="flex-1 flex items-center justify-center">
+          <RoomSetup onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} isLoading={isLoading} />
         </main>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <div className="min-h-screen flex flex-col bg-background">
       <StreamHeader />
 
-      <main className="flex-1 container mx-auto px-4 py-4">
-        {/* Stream info */}
-        <Card className="p-4 mb-4 bg-white shadow-sm">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-              <h1 className="text-xl font-bold mb-1">{streamTitle}</h1>
-              <p className="text-gray-600 text-sm">Live HLS Stream</p>
-            </div>
-            <div className="flex items-center gap-1 text-sm bg-red-100 text-red-700 px-3 py-1 rounded-full">
-              <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-              <Users className="h-4 w-4" />
-              <span>{viewerCount} viewers</span>
-            </div>
-          </div>
-        </Card>
+      {/* Main content - Fixed height to prevent scrolling */}
+      <main className="flex-1 flex flex-col h-[calc(100vh-80px)]">
+        <div className="container mx-auto px-4 py-4 flex-1 flex flex-col">
+          {/* Room info header */}
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="mb-4">
+            <Card className="p-4 bg-card shadow-card border-2 border-primary/10">
+              <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                <div>
+                  <h1 className="text-2xl font-bold mb-1 bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                    Live Stream Room
+                  </h1>
+                  <p className="text-muted-foreground">
+                    {remoteStreams.length + (localStream ? 1 : 0)} participants connected
+                  </p>
+                </div>
 
-        {/* Video player */}
-        <Card className="p-4 bg-white shadow-sm">
-          <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
-            {isLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black">
-                <div className="text-center text-white">
-                  <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                  <p>Loading stream...</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Room code */}
+                  <div className="flex items-center gap-2 bg-primary/10 px-3 py-2 rounded-lg border border-primary/20">
+                    <span className="text-sm font-medium text-primary">Room: {currentRoom.roomCode}</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={copyRoomCode}
+                      className="h-6 w-6 p-0 hover:bg-primary/20"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  </div>
+
+                  {/* Watch code */}
+                  <div className="flex items-center gap-2 bg-secondary/10 px-3 py-2 rounded-lg border border-secondary/20">
+                    <span className="text-sm font-medium text-secondary-foreground">
+                      Watch: {currentRoom.watchCode}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={copyWatchCode}
+                      className="h-6 w-6 p-0 hover:bg-secondary/20"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  </div>
+
+                  {/* Layout toggle */}
+                  <Button size="sm" variant="outline" onClick={toggleLayout} className="gap-2 hover:bg-muted">
+                    {layoutMode === "equal" ? <Focus className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
+                    {layoutMode === "equal" ? "Focus" : "Equal"}
+                  </Button>
+
+                  {/* Share button */}
+                  <Button size="sm" variant="outline" onClick={handleShare} className="gap-2 hover:bg-muted">
+                    <Share2 className="h-4 w-4" />
+                    Share
+                  </Button>
+
+                  {/* Leave room */}
+                  <Button variant="destructive" size="sm" onClick={handleLeaveRoom}>
+                    Leave Room
+                  </Button>
                 </div>
               </div>
+            </Card>
+          </motion.div>
+
+          {/* Video and chat container - Flexible height */}
+          <div className="flex-1 flex gap-4 min-h-0">
+            {/* Video section */}
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className={`${isChatOpen ? "flex-1" : "w-full"} flex flex-col min-h-0`}
+            >
+              <Card className="flex-1 p-4 bg-card shadow-card min-h-0">
+                <VideoGrid
+                  localStream={localStream}
+                  remoteStreams={remoteStreams}
+                  isMicOn={isMicOn}
+                  isCameraOn={isCameraOn}
+                  layoutMode={layoutMode}
+                />
+              </Card>
+
+              {/* Controls */}
+              <div className="mt-4">
+                <StreamControls
+                  isMicOn={isMicOn}
+                  isCameraOn={isCameraOn}
+                  toggleMic={toggleMic}
+                  toggleCamera={toggleCamera}
+                  isConnected={isConnected}
+                  isLoading={isLoading}
+                  toggleChat={toggleChat}
+                  isChatOpen={isChatOpen}
+                />
+              </div>
+            </motion.div>
+
+            {/* Chat panel - Fixed width */}
+            {isChatOpen && (
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="w-80 flex-shrink-0">
+                <ChatPanel messages={chatMessages} sendMessage={sendChatMessage} isConnected={isConnected} />
+              </motion.div>
             )}
-
-            <video ref={videoRef} className="w-full h-full object-cover" playsInline />
-
-            {/* Video controls overlay */}
-            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent opacity-0 hover:opacity-100 transition-opacity">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="icon" className="text-white hover:bg-white/20" onClick={togglePlay}>
-                    {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-                  </Button>
-                  <Button variant="ghost" size="icon" className="text-white hover:bg-white/20" onClick={toggleMute}>
-                    {isMuted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
-                  </Button>
-                  <span className="text-white text-sm ml-2">LIVE</span>
-                </div>
-                <Button variant="ghost" size="icon" className="text-white hover:bg-white/20" onClick={toggleFullscreen}>
-                  <Maximize className="h-5 w-5" />
-                </Button>
-              </div>
-            </div>
           </div>
-        </Card>
+        </div>
       </main>
     </div>
   )

@@ -1,10 +1,8 @@
 "use client"
 
-import { useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight, Quote } from "lucide-react"
-import { motion, AnimatePresence } from "framer-motion"
+import { Quote, Star } from "lucide-react"
+import { motion } from "framer-motion"
 
 const testimonials = [
   {
@@ -13,6 +11,8 @@ const testimonials = [
     author: "Sarah Johnson",
     role: "Event Manager",
     company: "GlobalEvents Inc.",
+    rating: 5,
+    avatar: "SJ",
   },
   {
     quote:
@@ -20,6 +20,8 @@ const testimonials = [
     author: "Dr. Michael Chen",
     role: "Professor",
     company: "Tech University",
+    rating: 5,
+    avatar: "MC",
   },
   {
     quote:
@@ -27,80 +29,83 @@ const testimonials = [
     author: "Alex Rodriguez",
     role: "Marketing Director",
     company: "Innovate Solutions",
+    rating: 5,
+    avatar: "AR",
+  },
+  {
+    quote:
+      "Simple setup, powerful features, and excellent performance. StreamConnect is exactly what we needed for our remote team meetings.",
+    author: "Emily Davis",
+    role: "Team Lead",
+    company: "Remote First Co.",
+    rating: 5,
+    avatar: "ED",
+  },
+  {
+    quote:
+      "The room-based system with unique codes makes it so easy to manage different streaming sessions. Highly recommended!",
+    author: "James Wilson",
+    role: "Content Creator",
+    company: "Creative Studios",
+    rating: 5,
+    avatar: "JW",
+  },
+  {
+    quote: "Outstanding video quality and the chat feature keeps our audience engaged throughout the entire stream.",
+    author: "Lisa Thompson",
+    role: "Community Manager",
+    company: "Social Media Hub",
+    rating: 5,
+    avatar: "LT",
   },
 ]
 
 export function TestimonialSection() {
-  const [currentIndex, setCurrentIndex] = useState(0)
-
-  const next = () => {
-    setCurrentIndex((prevIndex) => (prevIndex + 1) % testimonials.length)
-  }
-
-  const prev = () => {
-    setCurrentIndex((prevIndex) => (prevIndex - 1 + testimonials.length) % testimonials.length)
-  }
-
   return (
     <section id="testimonials" className="py-20 bg-muted/30">
       <div className="container mx-auto px-4">
         <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">What Our Users Say</h2>
+          <h2 className="text-3xl md:text-4xl font-bold mb-4 bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+            What Our Users Say
+          </h2>
           <p className="text-muted-foreground max-w-2xl mx-auto">
             Discover how StreamConnect is helping creators and businesses connect with their audiences.
           </p>
         </div>
 
-        <div className="max-w-4xl mx-auto">
-          <div className="relative">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={currentIndex}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.3 }}
-              >
-                <Card className="border-2 border-primary/10">
-                  <CardContent className="p-8">
-                    <Quote className="h-12 w-12 text-primary/30 mb-6" />
-                    <p className="text-xl mb-6">{testimonials[currentIndex].quote}</p>
-                    <div className="flex items-center">
-                      <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center mr-4">
-                        <span className="font-bold text-primary">{testimonials[currentIndex].author.charAt(0)}</span>
-                      </div>
-                      <div>
-                        <p className="font-bold">{testimonials[currentIndex].author}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {testimonials[currentIndex].role}, {testimonials[currentIndex].company}
-                        </p>
-                      </div>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
+          {testimonials.map((testimonial, index) => (
+            <motion.div
+              key={index}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: index * 0.1 }}
+            >
+              <Card className="h-full border-2 border-primary/10 hover:border-primary/20 transition-colors shadow-card">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-1 mb-4">
+                    {[...Array(testimonial.rating)].map((_, i) => (
+                      <Star key={i} className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                    ))}
+                  </div>
+                  <Quote className="h-8 w-8 text-primary/30 mb-4" />
+                  <p className="text-sm mb-6 leading-relaxed">{testimonial.quote}</p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full gradient-primary flex items-center justify-center">
+                      <span className="font-bold text-primary-foreground text-sm">{testimonial.avatar}</span>
                     </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            </AnimatePresence>
-
-            <div className="flex justify-center mt-8 gap-2">
-              <Button variant="outline" size="icon" onClick={prev}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              {testimonials.map((_, index) => (
-                <Button
-                  key={index}
-                  variant="ghost"
-                  size="sm"
-                  className={`w-8 h-8 p-0 ${index === currentIndex ? "bg-primary text-primary-foreground" : ""}`}
-                  onClick={() => setCurrentIndex(index)}
-                >
-                  {index + 1}
-                </Button>
-              ))}
-              <Button variant="outline" size="icon" onClick={next}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
+                    <div>
+                      <p className="font-semibold text-sm">{testimonial.author}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {testimonial.role}, {testimonial.company}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ))}
         </div>
       </div>
     </section>

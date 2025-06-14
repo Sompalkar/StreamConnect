@@ -1,12 +1,12 @@
 import type { Socket } from "socket.io"
-import type { WebRtcTransport, Producer, Consumer } from "mediasoup/node/lib/types"
+import type { types } from "mediasoup"
 
 export class Peer {
   id: string
   socket: Socket
-  transports: Map<string, WebRtcTransport>
-  producers: Map<string, Producer>
-  consumers: Map<string, Consumer>
+  transports: Map<string, types.WebRtcTransport>
+  producers: Map<string, types.Producer>
+  consumers: Map<string, types.Consumer>
 
   constructor(id: string, socket: Socket) {
     this.id = id
@@ -16,11 +16,11 @@ export class Peer {
     this.consumers = new Map()
   }
 
-  addTransport(transport: WebRtcTransport): void {
+  addTransport(transport: types.WebRtcTransport): void {
     this.transports.set(transport.id, transport)
   }
 
-  getTransport(transportId: string): WebRtcTransport | undefined {
+  getTransport(transportId: string): types.WebRtcTransport | undefined {
     return this.transports.get(transportId)
   }
 
@@ -33,11 +33,11 @@ export class Peer {
     return false
   }
 
-  addProducer(producer: Producer): void {
+  addProducer(producer: types.Producer): void {
     this.producers.set(producer.id, producer)
   }
 
-  getProducer(producerId: string): Producer | undefined {
+  getProducer(producerId: string): types.Producer | undefined {
     return this.producers.get(producerId)
   }
 
@@ -50,11 +50,11 @@ export class Peer {
     return false
   }
 
-  addConsumer(consumer: Consumer): void {
+  addConsumer(consumer: types.Consumer): void {
     this.consumers.set(consumer.id, consumer)
   }
 
-  getConsumer(consumerId: string): Consumer | undefined {
+  getConsumer(consumerId: string): types.Consumer | undefined {
     return this.consumers.get(consumerId)
   }
 

@@ -1,5 +1,5 @@
 import { Room } from "../models/Room"
-import type { Router } from "mediasoup/node/lib/Router"
+import type { types } from "mediasoup"
 
 class RoomService {
   private rooms: Map<string, Room>
@@ -39,7 +39,7 @@ class RoomService {
   }
 
   // Create a new room
-  createRoom(router: Router): Room {
+  createRoom(router: types.Router): Room {
     const roomCode = this.generateRoomCode()
     const watchCode = this.generateWatchCode()
     const roomId = roomCode.toLowerCase()

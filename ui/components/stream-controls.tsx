@@ -38,12 +38,16 @@ export function StreamControls({
   }
 
   return (
-    <Card className="p-6">
+    <Card className="p-6 bg-card shadow-card">
       <div className="flex flex-wrap justify-center gap-4">
         <Button
           variant={isMicOn ? "default" : "outline"}
           size="lg"
-          className="gap-2"
+          className={`gap-2 ${
+            isMicOn
+              ? "gradient-primary text-primary-foreground shadow-glow"
+              : "border-destructive/20 text-destructive hover:bg-destructive/10"
+          }`}
           onClick={toggleMic}
           disabled={isLoading || !isConnected}
         >
@@ -61,7 +65,11 @@ export function StreamControls({
         <Button
           variant={isCameraOn ? "default" : "outline"}
           size="lg"
-          className="gap-2"
+          className={`gap-2 ${
+            isCameraOn
+              ? "gradient-primary text-primary-foreground shadow-glow"
+              : "border-destructive/20 text-destructive hover:bg-destructive/10"
+          }`}
           onClick={toggleCamera}
           disabled={isLoading || !isConnected}
         >
@@ -76,11 +84,16 @@ export function StreamControls({
           )}
         </Button>
 
-        <Button variant={isChatOpen ? "default" : "outline"} size="lg" className="gap-2" onClick={toggleChat}>
+        <Button
+          variant={isChatOpen ? "default" : "outline"}
+          size="lg"
+          className={`gap-2 ${isChatOpen ? "gradient-secondary text-primary-foreground" : "hover:bg-muted"}`}
+          onClick={toggleChat}
+        >
           <MessageSquare className="h-5 w-5" /> {isChatOpen ? "Hide Chat" : "Show Chat"}
         </Button>
 
-        <Button variant="outline" size="lg" className="gap-2" onClick={handleShare}>
+        <Button variant="outline" size="lg" className="gap-2 hover:bg-muted" onClick={handleShare}>
           <Share2 className="h-5 w-5" /> Share Stream
         </Button>
       </div>

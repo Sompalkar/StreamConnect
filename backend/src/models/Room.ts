@@ -1,15 +1,15 @@
-import type { Router } from "mediasoup/node/lib/Router"
+import type { types } from "mediasoup"
 import type { Peer } from "./Peer"
 
 export class Room {
   id: string
   roomCode: string
   watchCode: string
-  router: Router
+  router: types.Router
   peers: Map<string, Peer>
   createdAt: Date
 
-  constructor(id: string, roomCode: string, watchCode: string, router: Router) {
+  constructor(id: string, roomCode: string, watchCode: string, router: types.Router) {
     this.id = id
     this.roomCode = roomCode
     this.watchCode = watchCode
