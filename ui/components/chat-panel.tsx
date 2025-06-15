@@ -18,6 +18,7 @@ interface ChatPanelProps {
 export function ChatPanel({ messages, sendMessage, isConnected, onClose }: ChatPanelProps) {
   const [message, setMessage] = useState("")
   const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -29,6 +30,13 @@ export function ChatPanel({ messages, sendMessage, isConnected, onClose }: ChatP
     }
   }, [messages])
 
+  // Focus input when chat opens
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus()
+    }
+  }, [])
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (message.trim() && isConnected) {
@@ -37,8 +45,13 @@ export function ChatPanel({ messages, sendMessage, isConnected, onClose }: ChatP
     }
   }
 
+  // Prevent event bubbling to avoid auto-close
+  const handleChatClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+  }
+
   return (
-    <div className="h-full flex flex-col bg-card">
+    <div className="h-full flex flex-col bg-card" onClick={handleChatClick}>
       {/* Chat header */}
       <div className="flex-shrink-0 px-4 py-3 border-b bg-muted/30 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -95,11 +108,13 @@ export function ChatPanel({ messages, sendMessage, isConnected, onClose }: ChatP
       <div className="flex-shrink-0 p-4 border-t bg-muted/30">
         <form onSubmit={handleSubmit} className="flex gap-2">
           <Input
+            ref={inputRef}
             placeholder={isConnected ? "Type a message..." : "Join stream to chat"}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             disabled={!isConnected}
             className="flex-1 border-2 focus:border-primary"
+            onClick={handleChatClick}
           />
           <Button
             type="submit"

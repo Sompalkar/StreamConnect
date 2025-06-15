@@ -17,6 +17,7 @@ export interface Room {
   description?: string
   isLive?: boolean
   createdAt: Date
+  hlsUrl?: string
 }
 
 interface StreamState {
@@ -32,6 +33,7 @@ interface StreamState {
   currentRoom: Room | null
   isLive: boolean
   isCreator: boolean
+  isInitialized: boolean
 
   // Actions
   initializeStream: () => Promise<void>
@@ -55,8 +57,8 @@ const peerConfiguration: RTCConfiguration = {
 export const useStreamStore = create<StreamState>((set, get) => ({
   localStream: null,
   remoteStreams: [],
-  isMicOn: true,
-  isCameraOn: true,
+  isMicOn: false,
+  isCameraOn: false,
   isConnected: false,
   socket: null,
   peerConnections: {},
@@ -65,10 +67,18 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   currentRoom: null,
   isLive: false,
   isCreator: false,
+  isInitialized: false,
 
-  // Initialize media stream (camera and microphone)
+  // Initialize media stream only when joining a room
   initializeStream: async () => {
     try {
+      // Stop existing stream if any
+      const existingStream = get().localStream
+      if (existingStream) {
+        existingStream.getTracks().forEach((track) => track.stop())
+      }
+
+      console.log("Requesting camera and microphone access...")
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: 1280 },
@@ -82,21 +92,33 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         },
       })
 
-      set({ localStream: stream, isMicOn: true, isCameraOn: true })
+      console.log("Media access granted")
+      set({
+        localStream: stream,
+        isMicOn: true,
+        isCameraOn: true,
+        isInitialized: true,
+      })
     } catch (error) {
       console.error("Error accessing media devices:", error)
       throw error
     }
   },
 
-  // Stop media stream
+  // Stop media stream and revoke access
   stopStream: () => {
     const { localStream } = get()
     if (localStream) {
+      console.log("Stopping media stream and revoking camera access...")
       localStream.getTracks().forEach((track) => {
         track.stop()
       })
-      set({ localStream: null })
+      set({
+        localStream: null,
+        isMicOn: false,
+        isCameraOn: false,
+        isInitialized: false,
+      })
     }
   },
 
@@ -111,14 +133,66 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     }
   },
 
-  // Toggle camera on/off
-  toggleCamera: () => {
-    const { localStream, isCameraOn } = get()
-    if (localStream) {
+  // Toggle camera on/off with proper stream management
+  toggleCamera: async () => {
+    const { localStream, isCameraOn, peerConnections } = get()
+
+    if (!localStream) return
+
+    if (isCameraOn) {
+      // Turn camera off - disable video tracks
       localStream.getVideoTracks().forEach((track) => {
-        track.enabled = !isCameraOn
+        track.enabled = false
       })
-      set({ isCameraOn: !isCameraOn })
+      set({ isCameraOn: false })
+    } else {
+      // Turn camera on - we need to get a fresh video track
+      try {
+        // Get new video stream
+        const newVideoStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30 },
+          },
+        })
+
+        const newVideoTrack = newVideoStream.getVideoTracks()[0]
+        const oldVideoTrack = localStream.getVideoTracks()[0]
+
+        if (oldVideoTrack) {
+          // Replace the old video track with the new one
+          localStream.removeTrack(oldVideoTrack)
+          oldVideoTrack.stop()
+        }
+
+        // Add the new video track
+        localStream.addTrack(newVideoTrack)
+
+        // Update all peer connections with the new track
+        Object.values(peerConnections).forEach(async (pc) => {
+          const sender = pc.getSenders().find((s) => s.track?.kind === "video")
+          if (sender) {
+            try {
+              await sender.replaceTrack(newVideoTrack)
+            } catch (error) {
+              console.error("Error replacing video track:", error)
+            }
+          } else {
+            // If no video sender exists, add the track
+            pc.addTrack(newVideoTrack, localStream)
+          }
+        })
+
+        set({ isCameraOn: true })
+      } catch (error) {
+        console.error("Error restarting camera:", error)
+        // Fallback: just enable the existing track
+        localStream.getVideoTracks().forEach((track) => {
+          track.enabled = true
+        })
+        set({ isCameraOn: true })
+      }
     }
   },
 
@@ -236,18 +310,33 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       }
     })
 
-    socket.on("room-live-status", (data: { isLive: boolean; title?: string; description?: string }) => {
-      set({
-        isLive: data.isLive,
-        currentRoom: get().currentRoom
-          ? {
-              ...get().currentRoom!,
-              title: data.title || get().currentRoom!.title,
-              description: data.description || get().currentRoom!.description,
-              isLive: data.isLive,
-            }
-          : null,
-      })
+    socket.on(
+      "room-live-status",
+      (data: { isLive: boolean; title?: string; description?: string; hlsUrl?: string }) => {
+        set({
+          isLive: data.isLive,
+          currentRoom: get().currentRoom
+            ? {
+                ...get().currentRoom!,
+                title: data.title || get().currentRoom!.title,
+                description: data.description || get().currentRoom!.description,
+                isLive: data.isLive,
+                hlsUrl: data.hlsUrl,
+              }
+            : null,
+        })
+      },
+    )
+
+    // Handle chat messages from socket
+    socket.on("chat-message", (data: { from: string; message: string; timestamp: number }) => {
+      const chatMessage: ChatMessage = {
+        text: data.message,
+        sender: data.from === socket.id ? "You" : `User ${data.from.slice(-4)}`,
+        timestamp: data.timestamp,
+        isLocal: data.from === socket.id,
+      }
+      set({ chatMessages: [...get().chatMessages, chatMessage] })
     })
 
     set({ socket, isConnected: true })
@@ -342,7 +431,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
           if (message.type === "chat") {
             const chatMessage: ChatMessage = {
               text: message.text,
-              sender: message.sender || userId,
+              sender: message.sender || `User ${userId.slice(-4)}`,
               timestamp: message.timestamp || Date.now(),
               isLocal: false,
             }
@@ -406,15 +495,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       description,
     })
 
-    set({
-      isLive: true,
-      currentRoom: {
-        ...currentRoom,
-        title,
-        description,
-        isLive: true,
-      },
-    })
+    // The live status will be updated via the socket event
   },
 
   // End live
@@ -428,16 +509,10 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       roomId: currentRoom.id,
     })
 
-    set({
-      isLive: false,
-      currentRoom: {
-        ...currentRoom,
-        isLive: false,
-      },
-    })
+    // The live status will be updated via the socket event
   },
 
-  // Disconnect from room
+  // Disconnect from room and stop camera access
   disconnectFromRoom: () => {
     const { socket, peerConnections, dataChannels } = get()
 
@@ -456,6 +531,9 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       socket.disconnect()
     }
 
+    // Stop media stream and revoke camera access
+    get().stopStream()
+
     set({
       socket: null,
       peerConnections: {},
@@ -469,20 +547,25 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     })
   },
 
-  // Send chat message via data channel
+  // Send chat message via socket and data channel
   sendChatMessage: (text: string) => {
     const { dataChannels, socket } = get()
 
-    if (!text.trim() || !socket) return
+    if (!text.trim()) return
 
     const message = {
       type: "chat",
       text,
-      sender: socket.id,
+      sender: "You",
       timestamp: Date.now(),
     }
 
-    // Send to all peers via data channels
+    // Send via socket for server-side broadcasting
+    if (socket) {
+      socket.emit("chat-message", { message: text })
+    }
+
+    // Send to all peers via data channels as backup
     Object.values(dataChannels).forEach((channel) => {
       if (channel.readyState === "open") {
         channel.send(JSON.stringify(message))

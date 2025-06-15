@@ -37,6 +37,7 @@ export default function StreamPage() {
     isLive,
     isCreator,
     stopStream,
+    isInitialized,
   } = useStreamStore()
 
   const [isLoading, setIsLoading] = useState(false)
@@ -46,11 +47,15 @@ export default function StreamPage() {
   const [showSettings, setShowSettings] = useState(false)
   const chatOverlayRef = useRef<HTMLDivElement>(null)
 
-  // Handle outside click for chat overlay
+  // Handle outside click for chat overlay - but prevent auto-close for single user
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (chatOverlayRef.current && !chatOverlayRef.current.contains(event.target as Node)) {
-        setIsChatOpen(false)
+        // Only close chat if there are other users or if explicitly clicking outside
+        const totalParticipants = remoteStreams.length + (localStream ? 1 : 0)
+        if (totalParticipants > 1) {
+          setIsChatOpen(false)
+        }
       }
     }
 
@@ -58,7 +63,7 @@ export default function StreamPage() {
       document.addEventListener("mousedown", handleClickOutside)
       return () => document.removeEventListener("mousedown", handleClickOutside)
     }
-  }, [isChatOpen])
+  }, [isChatOpen, remoteStreams.length, localStream])
 
   // Handle creating a new room
   const handleCreateRoom = async () => {
@@ -113,12 +118,11 @@ export default function StreamPage() {
   // Handle leaving the room
   const handleLeaveRoom = () => {
     disconnectFromRoom()
-    stopStream()
     setShowRoomSetup(true)
     setIsChatOpen(false)
     toast({
       title: "Left the room",
-      description: "You have disconnected from the stream.",
+      description: "You have disconnected from the stream and camera access has been revoked.",
     })
   }
 
@@ -196,7 +200,7 @@ export default function StreamPage() {
     }
   }
 
-  // Toggle chat panel
+  // Toggle chat panel with improved logic
   const toggleChat = () => {
     setIsChatOpen(!isChatOpen)
   }
@@ -252,6 +256,7 @@ export default function StreamPage() {
                       {totalParticipants} participant{totalParticipants !== 1 ? "s" : ""}
                     </span>
                     <span>Room: {currentRoom.roomCode}</span>
+                    {isInitialized && <span className="text-green-600 dark:text-green-400">Camera Active</span>}
                   </div>
                 </div>
               </div>

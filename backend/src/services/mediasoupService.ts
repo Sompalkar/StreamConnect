@@ -62,8 +62,36 @@ class MediasoupService {
             "x-google-start-bitrate": 1000,
           },
         },
+        {
+          kind: "video",
+          mimeType: "video/H264",
+          clockRate: 90000,
+          parameters: {
+            "packetization-mode": 1,
+            "profile-level-id": "42e01f",
+            "level-asymmetry-allowed": 1,
+          },
+        },
       ],
     })
+  }
+
+  // Create RTP transport for HLS streaming
+  async createPlainTransport(router: types.Router, rtpPort: number): Promise<types.PlainTransport> {
+    const transport = await router.createPlainTransport({
+      listenIp: { ip: "127.0.0.1", announcedIp: undefined },
+      rtcpMux: false,
+      comedia: true,
+      enableRtx: false,
+      enableSrtp: false,
+    })
+
+    await transport.connect({
+      ip: "127.0.0.1",
+      port: rtpPort,
+    })
+
+    return transport
   }
 
   async close(): Promise<void> {
